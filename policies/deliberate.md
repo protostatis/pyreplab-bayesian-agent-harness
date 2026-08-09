@@ -1,0 +1,1 @@
+Execute the task deliberately. First inspect the relevant files and constraints, then form a concise internal plan before changing anything. Use Python or shell computation when useful. Before stopping, inspect and independently check the completed artifact against every stated requirement. All work must remain in `/workspace`; no local or host filesystem is available.

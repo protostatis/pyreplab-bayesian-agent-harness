@@ -1,0 +1,48 @@
+# Private experiment outputs and local agent state
+/.runs/
+/runs/
+/.pi/
+/artifacts/
+/checkpoints/
+/data/local/
+/models/local/
+/notes/local/
+/notes/opencode-session-outcome-training-history.md
+
+# Credentials and machine-local configuration
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+*.p12
+*.pfx
+id_rsa
+id_ed25519
+
+# Python
+**/__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+
+# JavaScript / build output
+node_modules/
+dist/
+build/
+coverage/
+
+# Local logs, editors, and OS metadata
+*.log
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*~

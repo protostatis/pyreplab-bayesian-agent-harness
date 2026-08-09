@@ -1,0 +1,1 @@
+Execute the task directly and economically. Use the sandboxed `bash` tool only as needed, make the requested changes in `/workspace`, and stop when the required artifact exists. Do not spend turns narrating a plan. You cannot access any local or host filesystem outside `/workspace`.

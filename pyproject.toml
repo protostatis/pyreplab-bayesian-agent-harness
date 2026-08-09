@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pyreplab-bayesian-agent-harness"
+version = "0.1.0"
+description = "A verifiable task gym and policy allocator experiment for agent harnesses"
+requires-python = ">=3.11"
+dependencies = []
+
+[project.urls]
+Repository = "https://github.com/protostatis/pyreplab-bayesian-agent-harness"
+Issues = "https://github.com/protostatis/pyreplab-bayesian-agent-harness/issues"
+
+[project.scripts]
+pyreplab-harness = "pyreplab_harness.cli:main"
+pyreplab-harness-smoke = "pyreplab_harness.orchestrator:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
