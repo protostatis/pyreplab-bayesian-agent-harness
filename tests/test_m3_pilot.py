@@ -14,6 +14,7 @@ from pyreplab_harness.m3_pilot import (
     _contains_argument_sequence,
     _argument_value,
     _pi_provider_identity,
+    _run_checked,
     build_headroom_manifest,
     freeze_headroom_manifest,
     run_headroom_pilot,
@@ -189,6 +190,16 @@ class M3PilotManifestTest(unittest.TestCase):
             ]
         )
         self.assertEqual(args.command, "preflight")
+
+    def test_checked_command_can_read_successful_version_from_stderr(self) -> None:
+        with patch("pyreplab_harness.m3_pilot.subprocess.run") as run:
+            run.return_value.returncode = 0
+            run.return_value.stdout = ""
+            run.return_value.stderr = "version: 1 (abc)\n"
+            self.assertEqual(
+                _run_checked(["server", "--version"], stderr_fallback=True),
+                "version: 1 (abc)",
+            )
 
     def test_interrupted_panel_marker_blocks_resume(self) -> None:
         runtime = {

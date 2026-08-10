@@ -609,6 +609,7 @@ def _run_checked(
     *,
     timeout: int = 120,
     cwd: Path | None = None,
+    stderr_fallback: bool = False,
 ) -> str:
     completed = subprocess.run(
         command,
@@ -624,10 +625,17 @@ def _run_checked(
             f"command failed ({completed.returncode}): "
             f"{completed.stderr.strip() or completed.stdout.strip()}"
         )
-    return completed.stdout.strip()
+    stdout = completed.stdout.strip()
+    return stdout or (completed.stderr.strip() if stderr_fallback else "")
 
 
-def _ssh_capture(host: str, command: list[str], *, timeout: int = 120) -> str:
+def _ssh_capture(
+    host: str,
+    command: list[str],
+    *,
+    timeout: int = 120,
+    stderr_fallback: bool = False,
+) -> str:
     return _run_checked(
         [
             "ssh",
@@ -640,6 +648,7 @@ def _ssh_capture(host: str, command: list[str], *, timeout: int = 120) -> str:
             shlex.join(command),
         ],
         timeout=timeout,
+        stderr_fallback=stderr_fallback,
     )
 
 
@@ -727,7 +736,9 @@ def runtime_preflight(
         config.host, ["sha256sum", llama_server_binary]
     ).split()[0]
     server_version = _ssh_capture(
-        config.host, [llama_server_binary, "--version"]
+        config.host,
+        [llama_server_binary, "--version"],
+        stderr_fallback=True,
     ).splitlines()[0]
     bwrap_version = _ssh_capture(config.host, ["bwrap", "--version"])
     _ssh_capture(config.host, [*module_command, "fixture-port-check"])
