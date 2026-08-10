@@ -1,8 +1,9 @@
-"""Public registry and dispatch for the four gym families.
+"""Public registry and dispatch for the verifiable gym families.
 
 Canonical family names are ``artifact``, ``sqlite``, ``shell`` and
-``python_repair``. Generation and verification delegate to the per-family
-modules; attempts are always prepared with the generic
+``python_repair``, plus the narrow live ``unbrowser`` smoke family. Generation
+and verification delegate to the per-family modules; attempts are prepared
+with the generic
 ``artifact_gym.prepare_attempt`` helper that every family already shares.
 
 Unknown family names fail with a ``ValueError`` that lists the valid names.
@@ -23,9 +24,16 @@ from .contracts import AttemptRecord, TaskSpec, VerificationResult
 from .python_repair_gym import generate_python_repair_task, verify_python_repair_attempt
 from .shell_gym import generate_shell_task, verify_shell_attempt
 from .sqlite_gym import generate_sqlite_task, verify_sqlite_attempt
+from .unbrowser_gym import generate_unbrowser_task, verify_unbrowser_attempt
 
 #: Canonical family names, in a stable display order.
-FAMILIES: tuple[str, ...] = ("artifact", "sqlite", "shell", "python_repair")
+FAMILIES: tuple[str, ...] = (
+    "artifact",
+    "sqlite",
+    "shell",
+    "python_repair",
+    "unbrowser",
+)
 
 _REGISTRY: dict[str, dict[str, Callable[..., Any]]] = {
     "artifact": {
@@ -43,6 +51,10 @@ _REGISTRY: dict[str, dict[str, Callable[..., Any]]] = {
     "python_repair": {
         "generate": generate_python_repair_task,
         "verify": verify_python_repair_attempt,
+    },
+    "unbrowser": {
+        "generate": generate_unbrowser_task,
+        "verify": verify_unbrowser_attempt,
     },
 }
 

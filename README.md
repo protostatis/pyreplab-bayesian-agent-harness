@@ -1,10 +1,11 @@
 # Pyreplab Bayesian Agent Harness
 
-> **Current status:** The end-to-end implementation covers four verifiable task
-> families, immutable treatment registries, sequential Pi execution,
+> **Current status:** The end-to-end implementation covers four general-purpose
+> verifiable task families plus a narrow fixed-page Unbrowser smoke family,
+> immutable treatment registries, sequential Pi execution,
 > leakage-safe export, descriptor-aware Bayesian outcome modeling, strict
 > complete-panel allocator evaluation, and a static dashboard. The full remote
-> CPU/PyTorch suite passes 393 tests. No generated-policy corpus or
+> CPU/PyTorch suite passes 445 tests. No generated-policy corpus or
 > leave-one-policy-out result exists yet, so this validates software plumbing,
 > not the research thesis.
 
@@ -61,6 +62,10 @@ End-to-end agent execution is optional. It requires:
 - a Pi provider/model already configured by the operator; and
 - absolute remote project and run-root paths owned by a least-privilege user.
 
+The optional live Unbrowser smoke additionally requires the `unbrowser` 0.0.18
+binary (or a compatible pinned version) on that disposable runner. It does not
+enable network access inside the Bash sandbox.
+
 Copy the placeholder configuration and edit it locally. `.env` is ignored and
 must never contain credentials committed to Git.
 
@@ -112,6 +117,81 @@ python -m pyreplab_harness.orchestrator \
 
 Each treatment is an immutable prompt/tool/budget bundle. `--treatments all`
 runs every selected bundle sequentially on the same task and can be expensive.
+
+### 4. Run the live Pi + Unbrowser control smoke
+
+This is a deliberately tiny vertical slice, not a general browser gym. Pi runs
+on the controller, both policies use the remote read-only Unbrowser adapter,
+and file writes still go through the network-isolated Bubblewrap Bash tool. The
+adapter pins navigation to `https://example.com/` and exposes only `navigate`,
+`text`, `query`, and `blockmap`—no model-supplied URL, cookies, login, clicks,
+forms, JavaScript evaluation, downloads, or arbitrary navigation.
+
+```bash
+python -m pyreplab_harness.unbrowser_smoke \
+  --host "$PYREPLAB_HARNESS_HOST" \
+  --remote-project "$PYREPLAB_REMOTE_PROJECT" \
+  --remote-run-root "$PYREPLAB_REMOTE_RUN_ROOT/unbrowser-smoke" \
+  --unbrowser-binary "$PYREPLAB_REMOTE_UNBROWSER" \
+  --provider "$PYREPLAB_PI_PROVIDER" \
+  --model "$PYREPLAB_PI_MODEL" \
+  --seed 7
+```
+
+The frozen registry in
+[`policies/unbrowser-smoke-treatments.json`](policies/unbrowser-smoke-treatments.json)
+contains two equal-budget controls. Both call Unbrowser: the intentional
+negative control copies the first `p` into `heading` and must fail semantic
+verification; the positive control copies `h1` and must pass. The dedicated
+runner exits successfully only when that polarity and both exact tool traces
+are observed. This validates plumbing only; it is not allocator evidence.
+
+### 5. Run the two-policy outcome-model smoke
+
+This synthetic probe fits the Bayesian outcome model on deliberately generated
+complete panels, reloads the artifact, and counterfactually scores two frozen
+treatments against one shared task prompt. It ranks the seen `extract-h1` bundle
+above `extract-paragraph`, because those labels are intentionally supplied by
+the probe. It then scores six unseen-ID bundles. The current expected diagnostic
+is `inconclusive`: the candidate IDs and bundle IDs map to `UNK`, while their
+prompt-only margins are too small to claim descriptor generalization. The output
+validates theta-model plumbing and records this limit; it does not establish
+real policy effectiveness or generalization.
+
+```bash
+python -m pyreplab_harness.outcome_model_smoke \
+  --output-dir .runs/outcome-model-smoke
+```
+
+Use a CPU PyTorch environment. The retained directory contains only synthetic
+inputs and artifacts and must not be merged into a research dataset. The
+current descriptor probe exits with code 2 because its result is intentionally
+`inconclusive`; that is a reported capability limit, not an infrastructure
+failure.
+
+### 6. Run the descriptor-held-out learning smoke
+
+This stronger synthetic-only probe generates noisy outcomes for the policy
+grammar, neutralizes policy and bundle identity features, trains on one set of
+treatments, and ranks held-out bundles on held-out tasks. It reports a fixed
+representative panel with the highest and lowest predicted policies alongside
+synthetic `true_p`; `true_p` is diagnostic ground truth only and never enters
+the model input.
+
+```bash
+python -m pyreplab_harness.treatments generate \
+  .runs/learn-smoke-treatments.json --count 36 --seed 20260809
+
+python -m pyreplab_harness.outcome_model_learn_smoke \
+  .runs/learn-smoke-treatments.json \
+  --output-dir .runs/learn-smoke
+```
+
+The command exits `0` only when its predeclared descriptor-held-out gate passes;
+it exits `2` for an informative non-pass. The canonical 36-policy run improves
+synthetic Brier and expected allocation lift over random, but fails its held-out
+ranking threshold (`rho=0.238 < 0.3`), so it is not evidence that theta has
+learned a substantial transferable policy ranking.
 
 > **Safety:** Agent-authored commands execute on the configured SSH host inside
 > the Linux sandbox path. Use a disposable non-production host, a
@@ -228,6 +308,12 @@ procedural task generator
 ```
 
 Security boundaries include disabled Pi host tools, an explicit sandbox-only replacement `bash` tool, unshared task networking, hidden verifier bundles, separate Python-verifier isolation, and no unsafe verifier fallback.
+
+The optional Unbrowser smoke is a separately documented exception to task
+network isolation: the fixed-page child runs on the disposable worker host
+outside Bubblewrap through a strict adapter, while model-authored Bash remains
+network-isolated. See [`SECURITY.md`](SECURITY.md) before broadening that
+surface.
 
 ## Quick Verification
 

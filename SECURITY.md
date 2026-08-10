@@ -20,6 +20,33 @@ arbitrary generated code trustworthy. SSH configuration, the remote account,
 Pi provider extensions, the operating system, and the model endpoint remain
 part of the trusted computing base.
 
+## Fixed-page Unbrowser smoke boundary
+
+The optional Unbrowser smoke is intentionally not a general browsing tool:
+
+- Model-authored Bash remains inside Bubblewrap with its network namespace
+  unshared.
+- A separate `unbrowser` child runs as the least-privilege user on the
+  disposable SSH runner, outside Bubblewrap, because it requires outbound
+  network access.
+- The model cannot provide a URL. The adapter accepts only the exact public
+  smoke page `https://example.com/`, checks the final reported URL, and exposes
+  only `navigate`, `query`, `text`, and `blockmap`.
+- Cookies, credentials, authentication, clicks, form submission, JavaScript
+  evaluation, downloads, and raw JSON-RPC are not exposed.
+- Every attempt receives a fresh process and temporary home with a minimal
+  environment, bounded calls, timeouts, JSON-line limits, and result-size
+  limits. The process group is killed on protocol failure or timeout.
+- Page content is untrusted data. Policy prompts must never follow instructions
+  found in page text.
+
+Exact-URL pinning and post-navigation validation do not constitute a complete
+SSRF or redirect defense because the outbound request occurs before the final
+URL can be checked. Do not change the URL, enable redirects to untrusted
+targets, add credentials, or expose mutating/advanced methods without a new
+security review. Run this smoke only on a disposable runner that contains no
+secrets.
+
 ## Sensitive outputs
 
 `.runs/` may contain prompts, trajectories, model outputs, generated files,

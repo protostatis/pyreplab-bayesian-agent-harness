@@ -65,7 +65,10 @@ Pi JSON mode was verified to identify the provider and model, report token usage
 
 ### Included
 
-- Four local task families: structured artifacts, SQLite, Python repair, and shell/filesystem operations.
+- Four general-purpose local task families: structured artifacts, SQLite,
+  Python repair, and shell/filesystem operations.
+- One optional fixed-page, read-only Unbrowser control smoke, isolated from the
+  general-purpose task-network boundary.
 - Seeded task generation with multiple templates and difficulty levels.
 - Disposable task environments and hidden programmatic verifiers.
 - Paired Direct and Deliberate Gemma rollouts.
@@ -77,7 +80,9 @@ Pi JSON mode was verified to identify the provider and model, report token usage
 ### Excluded from the first MVP
 
 - Fine-tuning Gemma.
-- Live web or browser tasks.
+- General live-web/browser tasks and browser benchmarks. The sole exception is
+  the fixed `https://example.com/` read-only plumbing smoke; it is not a
+  benchmark or research corpus.
 - External benchmarks such as Terminal-Bench or SWE-bench.
 - Human escalation and user-response simulation.
 - Multiple harness decisions within one trajectory.
@@ -597,9 +602,20 @@ The restrictive gym `bash` tool is loaded only by explicit orchestrator flags fr
 
 ### Verified
 
-- The full suite passes on the configured Linux runner: **393 tests**, including PyTorch, Bubblewrap, network isolation, hidden-verifier isolation, CLI subprocesses, privacy, and dashboard tests.
+- The full suite passes on the configured Linux runner: **445 tests**, including PyTorch, Bubblewrap, network isolation, hidden-verifier isolation, the fixed-page Unbrowser boundary, synthetic theta-model smoke coverage, CLI subprocesses, privacy, and dashboard tests.
 - Pi JSON mode reports the pinned provider/model, token usage, tool calls, tool results, and terminal messages.
 - Paired Gemma smoke attempts ran on all four task families.
+- The fixed-page live Unbrowser runner observes the predeclared negative-control
+  failure and positive-control success with exact tool-call traces; this is
+  plumbing evidence only.
+- The synthetic two-policy theta-model smoke fits, reloads, and scores complete
+  panels with the predeclared `extract-h1` ranking. Its labels are generated and
+  it is not outcome-model evidence.
+- The synthetic descriptor-held-out learn-smoke uses 26 training and 10 held-out
+  grammar bundles with identity fields neutralized. Its canonical run improves
+  expected allocation lift over random but fails its predeclared held-out
+  ranking threshold (`rho=0.238 < 0.3`); it is an explicit non-pass, not
+  allocator evidence.
 - The resumable batch runner completed a real paired artifact job end to end in approximately 203 seconds.
 - Artifact, SQLite, and Python-repair smoke pairs passed under both policies.
 - The shell/filesystem smoke pair produced measured verifier failures under both policies, demonstrating useful failure capture but also indicating that this family needs calibration.

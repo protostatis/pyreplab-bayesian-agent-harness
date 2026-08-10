@@ -504,6 +504,44 @@ class BayesianModelTest(unittest.TestCase):
                 self.assertIn("quantiles", entry)
                 self.assertTrue(0.0 <= entry["mean"] <= 1.0)
 
+    def test_split_metrics_restores_train_eval_mode(self) -> None:
+        """_split_metrics should restore model.training to its previous state."""
+        pre = om.Preprocessor(max_vocab=50, max_tokens=16).fit(
+            [make_model_input(i, "direct") for i in range(8)]
+            + [make_model_input(i, "deliberate") for i in range(8)]
+        )
+        config = om.build_model_config(
+            pre, text_dim=8, cat_dim=4, numeric_hidden=6, fusion_hidden=8,
+        )
+        model = om.OutcomeModel(config)
+        # Build rows with labels for _split_metrics.
+        rows = [
+            {
+                "task_id": f"task-{i}",
+                "model_input": make_model_input(i, "direct" if i % 2 == 0 else "deliberate"),
+                "verified_success": i % 2 == 0,
+            }
+            for i in range(10)
+        ]
+
+        # Start in train mode.
+        model.train()
+        self.assertTrue(model.training)
+        om._split_metrics(model, pre, rows, "cpu", num_samples=10, seed=7)
+        self.assertTrue(model.training, "model should still be in train mode")
+
+        # Start in eval mode.
+        model.eval()
+        self.assertFalse(model.training)
+        om._split_metrics(model, pre, rows, "cpu", num_samples=10, seed=7)
+        self.assertFalse(model.training, "model should still be in eval mode")
+
+        # Empty rows — still restores.
+        model.train()
+        self.assertTrue(model.training)
+        om._split_metrics(model, pre, [], "cpu")
+        self.assertTrue(model.training, "model should still be in train mode after empty split")
+
     def test_treatment_encoder_maps_unseen_descriptors_to_distinct_vectors(self) -> None:
         treatments = generate_treatments(6, seed=33)
         train_inputs = [

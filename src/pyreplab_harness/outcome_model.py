@@ -972,7 +972,13 @@ def _split_metrics(
     num_samples: int = 50,
     seed: int | None = None,
 ) -> dict[str, Any]:
-    """Posterior-predict every row in ``rows`` and compute metric bundles."""
+    """Posterior-predict every row in ``rows`` and compute metric bundles.
+
+    Runs inference in ``eval`` mode (disabling dropout) and restores the
+    prior training state on exit.  This is important because during
+    training ``_split_metrics`` is called for early-stopping while the
+    model is in ``train`` mode.
+    """
     if not rows:
         return {
             "n": 0,
@@ -991,12 +997,17 @@ def _split_metrics(
             "tn": 0,
             "per_policy": {},
         }
-    x = collate_transform([pre.transform(row["model_input"]) for row in rows], device)
-    y_true = [float(bool(row["verified_success"])) for row in rows]
-    with torch.no_grad():
-        posterior = model.posterior_predict(x, num_samples=num_samples, seed=seed)
-    mean = posterior["mean"].tolist()
-    std = posterior["std"].tolist()
+    training = model.training
+    model.eval()
+    try:
+        x = collate_transform([pre.transform(row["model_input"]) for row in rows], device)
+        y_true = [float(bool(row["verified_success"])) for row in rows]
+        with torch.no_grad():
+            posterior = model.posterior_predict(x, num_samples=num_samples, seed=seed)
+        mean = posterior["mean"].tolist()
+        std = posterior["std"].tolist()
+    finally:
+        model.train(training)
     metrics = compute_metrics(y_true, mean, std, include_classification_metrics=True)
     per_policy: dict[str, Any] = {}
     for policy_id in sorted({str(row["model_input"].get("policy_id")) for row in rows}):
