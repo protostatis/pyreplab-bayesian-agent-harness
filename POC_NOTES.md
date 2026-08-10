@@ -13,9 +13,25 @@
 > **Generalized harness checkpoint:** The controlled treatment-registry path is
 > now wired through generation, execution, resumable batches, dataset export,
 > descriptor-aware training, and strict complete-panel allocator evaluation.
-> The remote CPU/PyTorch suite passes all 393 tests. This is implementation
-> evidence only: no generated-policy outcome corpus or leave-one-policy-out
-> result exists yet, and no live selector should be enabled.
+> The remote CPU/PyTorch suite passes all 445 tests. A fixed-page live
+> Pi/Unbrowser control smoke also produced the predeclared negative failure and
+> positive success with exact tool traces. This is implementation evidence
+> only: no generated-policy outcome corpus or leave-one-policy-out result
+> exists yet, and no learned live allocator selector should be enabled.
+
+> **Theta descriptor probe:** A deliberately labeled two-policy model sharply
+> ranks the two seen bundles, but six unseen-ID exact-clone and paraphrase
+> candidates collapse to near-identical low scores. The predeclared result is
+> therefore `inconclusive`, not descriptor-generalization evidence. The
+> mean-pooled encoder also ties an `h1, not p` versus `p, not h1` collision pair,
+> confirming that token order is not represented by this smoke setup.
+
+> **Held-out descriptor learn-smoke:** A 36-policy, noisy synthetic run trained
+> on 26 bundles and ranked 10 identity-neutralized held-out bundles. It improved
+> expected allocation lift over random by `0.028`, but its held-out rank recovery
+> was only `rho=0.238` and top-1 matched `1/12`; the predeclared verdict is
+> therefore a non-pass. This records partial signal, not substantial transferable
+> policy learning.
 
 ## 1. v1 Calibration Result
 

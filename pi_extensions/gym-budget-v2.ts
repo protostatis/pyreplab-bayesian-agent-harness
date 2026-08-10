@@ -11,6 +11,7 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
 const DEFAULT_TOOL_LIMIT = 8;
+const BUDGETED_TOOLS = new Set(["bash", "unbrowser"]);
 
 function configuredLimit(pi: ExtensionAPI): number {
   const raw = pi.getFlag("gym-tool-limit");
@@ -30,7 +31,7 @@ export default function (pi: ExtensionAPI): void {
   });
 
   pi.on("tool_call", (event, ctx) => {
-    if (event.toolName !== "bash") return;
+    if (!BUDGETED_TOOLS.has(event.toolName)) return;
 
     const limit = configuredLimit(pi);
     if (admittedCalls >= limit) {
@@ -50,7 +51,7 @@ export default function (pi: ExtensionAPI): void {
   });
 
   pi.on("tool_result", (event) => {
-    if (event.toolName !== "bash" || admittedCalls < configuredLimit(pi)) return;
+    if (!BUDGETED_TOOLS.has(event.toolName) || admittedCalls < configuredLimit(pi)) return;
     return {
       content: [
         ...event.content,

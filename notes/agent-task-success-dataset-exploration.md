@@ -95,9 +95,15 @@ Generalized evaluation deliberately has no implicit quota. Observed costs are
 reporting-only until a deployment constraint and leakage-safe ex-ante cost model
 are specified. It aborts on incomplete panels, duplicate attempts, identity or
 hash drift, unequal task-side inputs, or task IDs crossing splits. The full
-393-test suite passes in the remote CPU/PyTorch environment. This validates the
+445-test suite passes in the remote CPU/PyTorch environment. This validates the
 software path, not unseen-policy generalization; the next evidence requirement
 is an actual frozen generated-policy corpus with policy-held-out evaluation.
+
+A synthetic descriptor-held-out mechanism probe now exists, but its canonical
+36-policy run is an explicit non-pass: identity-neutralized held-out rank
+recovery is `rho=0.238`, below the predeclared `0.3` threshold, despite a small
+expected allocation lift over random. It must not be used as evidence for the
+real corpus or allocator.
 
 ## Ranked candidates
 

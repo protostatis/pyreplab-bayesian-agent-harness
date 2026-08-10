@@ -22,6 +22,9 @@ Issues = "https://github.com/protostatis/pyreplab-bayesian-agent-harness/issues"
 [project.scripts]
 pyreplab-harness = "pyreplab_harness.cli:main"
 pyreplab-harness-smoke = "pyreplab_harness.orchestrator:main"
+pyreplab-unbrowser-smoke = "pyreplab_harness.unbrowser_smoke:main"
+pyreplab-outcome-model-smoke = "pyreplab_harness.outcome_model_smoke:main"
+pyreplab-outcome-model-learn-smoke = "pyreplab_harness.outcome_model_learn_smoke:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

@@ -17,6 +17,10 @@ from typing import Any
 from .contracts import PolicySpec
 from .gym_registry import FAMILIES
 from .treatments import TreatmentRegistry, TreatmentSpec, to_policy_spec_kwargs
+from .unbrowser_rpc import validate_smoke_url
+
+
+UNBROWSER_TOOL_INTERFACE = "native_bash_unbrowser_readonly_v1"
 
 
 @dataclass(frozen=True)
@@ -202,19 +206,25 @@ def policy_spec(project_root: Path, policy_id: str, version: str = "1") -> Polic
 def policy_spec_from_treatment(treatment: TreatmentSpec) -> PolicySpec:
     """Convert one immutable registry entry into an executable policy.
 
-    The MVP Pi gym exposes only the native sandboxed ``bash`` interface. Other
-    interfaces remain valid registry descriptors but cannot be executed by this
-    orchestrator until a matching tool adapter exists.
+    The Pi gym supports the native sandboxed ``bash`` interface and one narrow
+    fixed-page, read-only Unbrowser interface. Other registry descriptors fail
+    closed until a matching adapter exists.
     """
 
-    if treatment.tool_interface != "native_bash":
+    supported = {
+        "native_bash": frozenset({"bash"}),
+        UNBROWSER_TOOL_INTERFACE: frozenset({"bash", "unbrowser"}),
+    }
+    expected_tools = supported.get(treatment.tool_interface)
+    if expected_tools is None:
         raise ValueError(
             f"unsupported treatment tool interface: {treatment.tool_interface!r}"
         )
-    if tuple(treatment.allowed_tools) != ("bash",):
+    actual_tools = tuple(treatment.allowed_tools)
+    if len(actual_tools) != len(expected_tools) or frozenset(actual_tools) != expected_tools:
         raise ValueError(
-            "the current gym can execute only allowed_tools=['bash']; got "
-            f"{list(treatment.allowed_tools)!r}"
+            f"tool interface {treatment.tool_interface!r} requires exactly "
+            f"allowed_tools={sorted(expected_tools)!r}; got {list(actual_tools)!r}"
         )
     return PolicySpec(
         **to_policy_spec_kwargs(treatment),
@@ -235,11 +245,26 @@ def _run_pi(
     provider: str = "ubuntu-gemma",
     model: str = "gemma-4-26b-a4b",
     thinking: str = "off",
+    unbrowser_url: str | None = None,
+    unbrowser_binary: str = "/usr/local/bin/unbrowser",
 ) -> subprocess.CompletedProcess[str]:
     # Keep the extension outside .pi/extensions so normal Pi sessions in this
     # repository never auto-discover the restrictive gym tool configuration.
     gym_extension = project_root / "pi_extensions" / "gym-tools.ts"
     budget_extension = project_root / "pi_extensions" / "gym-budget-v2.ts"
+    active_tools = tuple(sorted(policy.allowed_tools))
+    unsupported_tools = set(active_tools) - {"bash", "unbrowser"}
+    if unsupported_tools:
+        raise ValueError(f"unsupported active tools: {sorted(unsupported_tools)!r}")
+    if "unbrowser" in active_tools:
+        if unbrowser_url is None:
+            raise ValueError("an exact Unbrowser smoke URL is required")
+        validate_smoke_url(unbrowser_url)
+        if not unbrowser_binary.startswith("/") or "\n" in unbrowser_binary:
+            raise ValueError("unbrowser binary must be an absolute remote path")
+    elif unbrowser_url is not None:
+        raise ValueError("Unbrowser URL supplied to a treatment without the tool")
+
     command = [
         pi_executable,
         "--provider",
@@ -254,7 +279,7 @@ def _run_pi(
         "--no-session",
         "--no-builtin-tools",
         "--tools",
-        "bash",
+        ",".join(active_tools),
         "--no-context-files",
         "--no-skills",
         "--no-prompt-templates",
@@ -290,6 +315,23 @@ def _run_pi(
             "200%",
             "--gym-max-output-tokens",
             str(policy.max_output_tokens),
+        ]
+    )
+    if unbrowser_url is not None:
+        command.extend(
+            [
+                "--gym-unbrowser-url",
+                unbrowser_url,
+                "--gym-unbrowser-binary",
+                unbrowser_binary,
+                "--gym-unbrowser-timeout",
+                str(min(policy.command_timeout_seconds, 30)),
+                "--gym-unbrowser-tool-limit",
+                "3",
+            ]
+        )
+    command.extend(
+        [
             "--append-system-prompt",
             policy.system_prompt,
             prompt,
@@ -317,6 +359,8 @@ def _run_pi_checked(
     provider: str = "ubuntu-gemma",
     model: str = "gemma-4-26b-a4b",
     thinking: str = "off",
+    unbrowser_url: str | None = None,
+    unbrowser_binary: str = "/usr/local/bin/unbrowser",
 ) -> subprocess.CompletedProcess[str]:
     """Run Pi, converting a wall-clock timeout into a failed run.
 
@@ -335,6 +379,8 @@ def _run_pi_checked(
             provider,
             model,
             thinking,
+            unbrowser_url,
+            unbrowser_binary,
         )
     except subprocess.TimeoutExpired as error:
 
@@ -391,6 +437,24 @@ def _task_json(config: RemoteConfig, args: argparse.Namespace) -> dict[str, Any]
             args.difficulty,
         ],
     )
+
+
+def _unbrowser_url_for_task(
+    task: dict[str, Any], policy: PolicySpec
+) -> str | None:
+    """Return the trusted fixed URL only for the matching smoke family/tool."""
+
+    if "unbrowser" not in policy.allowed_tools:
+        return None
+    if task.get("family") != "unbrowser":
+        raise ValueError("the Unbrowser tool is restricted to the unbrowser family")
+    metadata = task.get("public_metadata")
+    if not isinstance(metadata, dict):
+        raise ValueError("Unbrowser task public_metadata must be an object")
+    url = metadata.get("allowed_url")
+    if not isinstance(url, str):
+        raise ValueError("Unbrowser task omitted its exact allowed_url")
+    return validate_smoke_url(url)
 
 
 def _run_attempt(
@@ -451,6 +515,8 @@ def _run_attempt(
         getattr(args, "provider", "ubuntu-gemma"),
         getattr(args, "model", "gemma-4-26b-a4b"),
         getattr(args, "thinking", "off"),
+        _unbrowser_url_for_task(task, policy),
+        getattr(args, "unbrowser_binary", "/usr/local/bin/unbrowser"),
     )
     pi_seconds = time.monotonic() - phase_started
 
@@ -497,6 +563,23 @@ def _run_attempt(
         usage = event_summary.get("usage") if isinstance(event_summary, dict) else None
         result["usage"] = usage if isinstance(usage, dict) else None
         if isinstance(event_summary, dict):
+            tool_trace = []
+            for execution in event_summary.get("tool_executions") or []:
+                if not isinstance(execution, dict):
+                    continue
+                tool_result = execution.get("result")
+                details = (
+                    tool_result.get("details")
+                    if isinstance(tool_result, dict)
+                    else None
+                )
+                tool_trace.append(
+                    {
+                        "tool_name": execution.get("tool_name"),
+                        "is_error": execution.get("is_error", False),
+                        "details": details if isinstance(details, dict) else None,
+                    }
+                )
             result["trajectory"] = {
                 "provider_turn_count": event_summary.get("provider_turn_count"),
                 "tool_call_count": event_summary.get("tool_call_count"),
@@ -505,6 +588,7 @@ def _run_attempt(
                 ),
                 "length_stop_count": event_summary.get("length_stop_count"),
                 "stop_reasons": event_summary.get("stop_reasons"),
+                "tool_trace": tool_trace,
             }
     result["timing"] = {
         "prepare_seconds": round(prepare_seconds, 3),
@@ -520,6 +604,10 @@ def _run_attempt(
 def run_single(
     project_root: Path, config: RemoteConfig, args: argparse.Namespace
 ) -> dict[str, Any]:
+    if args.family == "unbrowser":
+        raise ValueError(
+            "the unbrowser family requires a registered read-only Unbrowser treatment"
+        )
     policy = policy_spec(project_root, args.policy, getattr(args, "policy_version", "1"))
     task = _task_json(config, args)
     attempt_id = args.attempt_id or f"smoke-{policy.id}-{uuid.uuid4().hex[:12]}"
@@ -534,6 +622,10 @@ def run_pair(
     The task is generated once; the policies share it. Execution order is
     randomized deterministically from the seed.
     """
+    if args.family == "unbrowser":
+        raise ValueError(
+            "the unbrowser family requires registered read-only Unbrowser treatments"
+        )
     policy_version = getattr(args, "policy_version", "1")
     policies = {
         "direct": policy_spec(project_root, "direct", policy_version),
@@ -649,6 +741,27 @@ def run_registered_treatments(
         if treatment.bundle_id in selected:
             raise ValueError(f"duplicate treatment selection: {reference!r}")
         selected[treatment.bundle_id] = policy_spec_from_treatment(treatment)
+    has_unbrowser = {
+        reference: "unbrowser" in policy.allowed_tools
+        for reference, policy in selected.items()
+    }
+    family = getattr(args, "family", "artifact")
+    if family == "unbrowser" and not all(has_unbrowser.values()):
+        missing = sorted(
+            reference for reference, enabled in has_unbrowser.items() if not enabled
+        )
+        raise ValueError(
+            "the unbrowser family requires the read-only Unbrowser tool in every "
+            f"treatment; missing from {missing!r}"
+        )
+    if family != "unbrowser" and any(has_unbrowser.values()):
+        enabled = sorted(
+            reference for reference, value in has_unbrowser.items() if value
+        )
+        raise ValueError(
+            "read-only Unbrowser treatments are restricted to the unbrowser "
+            f"family; present in {enabled!r}"
+        )
     return _run_policy_set(
         project_root,
         config,
@@ -708,6 +821,13 @@ def build_parser() -> argparse.ArgumentParser:
         help="absolute remote run root (or PYREPLAB_REMOTE_RUN_ROOT)",
     )
     parser.add_argument("--remote-python", default="python3")
+    parser.add_argument(
+        "--unbrowser-binary",
+        default=os.environ.get(
+            "PYREPLAB_REMOTE_UNBROWSER", "/usr/local/bin/unbrowser"
+        ),
+        help="absolute Unbrowser binary path on the disposable remote runner",
+    )
     parser.add_argument("--pi", default=os.environ.get("PYREPLAB_PI", "pi"))
     parser.add_argument(
         "--provider",
