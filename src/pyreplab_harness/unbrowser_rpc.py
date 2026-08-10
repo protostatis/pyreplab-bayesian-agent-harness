@@ -68,6 +68,9 @@ class UnbrowserSession:
     non-mutating actions are allowed.  In interactive mode, click/type/submit
     are additionally available and same-origin Wikipedia URL changes are
     permitted after navigation.
+
+    When ``confined=True`` the Unbrowser binary runs inside a Bubblewrap
+    sandbox that retains network access but restricts filesystem visibility.
     """
 
     def __init__(
@@ -78,6 +81,7 @@ class UnbrowserSession:
         timeout_seconds: int = 30,
         max_result_bytes: int = DEFAULT_MAX_RESULT_BYTES,
         interactive: bool = False,
+        confined: bool = False,
     ) -> None:
         binary_path = Path(binary)
         if not binary_path.is_absolute():
@@ -92,6 +96,7 @@ class UnbrowserSession:
         self.max_result_bytes = int(max_result_bytes)
         self.runtime_version: str | None = None
         self.interactive = bool(interactive)
+        self.confined = bool(confined)
 
         if self.interactive:
             self.allowed_url = validate_interactive_url(allowed_url)
@@ -126,6 +131,13 @@ class UnbrowserSession:
         if not binary_path.is_file() or not os.access(binary_path, os.X_OK):
             raise FileNotFoundError(f"unbrowser binary is not executable: {self.binary}")
 
+        if self.confined:
+            self._start_confined()
+        else:
+            self._start_unconfined()
+
+    def _start_unconfined(self) -> None:
+        """Launch the Unbrowser binary as a direct child process (current behaviour)."""
         temporary_home = tempfile.TemporaryDirectory(prefix="pyreplab-unbrowser-")
         environment = self._minimal_environment(temporary_home.name)
         try:
@@ -161,6 +173,60 @@ class UnbrowserSession:
             raise
 
         self._temporary_home = temporary_home
+        self._process = process
+
+    def _start_confined(self) -> None:
+        """Launch the Unbrowser binary inside a Bubblewrap sandbox.
+
+        The sandbox retains network access but restricts filesystem visibility
+        so the browser cannot read project source, run artifacts, SSH keys,
+        model files, or the host user home directory.
+        """
+        from .unbrowser_sandbox import UnbrowserSandbox
+
+        sandbox = UnbrowserSandbox(self.binary, command_timeout=self.timeout_seconds)
+
+        # --- version probe inside the sandbox ---
+        version_cmd = sandbox.build_command("--version")
+        version_check = subprocess.run(
+            version_cmd,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            check=False,
+            timeout=min(self.timeout_seconds + 5, 15),
+        )
+        version_text = version_check.stdout.decode("utf-8", errors="replace").strip()
+        if version_check.returncode != 0 or not version_text:
+            raise UnbrowserProtocolError(
+                f"unbrowser --version failed (exit_code={version_check.returncode})"
+            )
+        if len(version_text) > 128:
+            raise UnbrowserProtocolError("unbrowser version output is oversized")
+        self.runtime_version = version_text.removeprefix("unbrowser ")
+
+        # --- launch unbrowser inside the sandbox ---
+        launch_cmd = list(sandbox.build_command())
+        # Inject UNBROWSER_TIMEOUT_MS before the final "--" separator.
+        # build_command() always appends "--" followed by the binary + args.
+        try:
+            sep_index = launch_cmd.index("--")
+        except ValueError:
+            sep_index = -1
+        launch_cmd[sep_index:sep_index] = [
+            "--setenv",
+            "UNBROWSER_TIMEOUT_MS",
+            str(self.timeout_seconds * 1000),
+        ]
+
+        process = subprocess.Popen(
+            launch_cmd,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
+        )
+        # No host-side _temporary_home is needed: the sandbox creates its own.
         self._process = process
 
     def _read_message(self, deadline: float) -> dict[str, Any]:

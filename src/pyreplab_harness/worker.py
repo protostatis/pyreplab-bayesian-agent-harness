@@ -116,6 +116,12 @@ def add_worker_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--unbrowser-max-result-bytes", type=int, default=DEFAULT_MAX_RESULT_BYTES
     )
+    parser.add_argument(
+        "--confine-unbrowser",
+        action="store_true",
+        default=False,
+        help="launch unbrowser inside a Bubblewrap sandbox (filesystem isolation)",
+    )
 
 
 def run_from_args(args: argparse.Namespace) -> int:
@@ -133,5 +139,6 @@ def run_from_args(args: argparse.Namespace) -> int:
             args.unbrowser_url,
             timeout_seconds=args.unbrowser_timeout,
             max_result_bytes=args.unbrowser_max_result_bytes,
+            confined=args.confine_unbrowser,
         )
     return serve(sandbox, sys.stdin, sys.stdout, args.max_timeout, unbrowser)

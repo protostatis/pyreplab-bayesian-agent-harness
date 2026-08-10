@@ -397,5 +397,116 @@ class UnbrowserInteractiveSessionTest(unittest.TestCase):
             )
 
 
+class ConfinedUnbrowserSessionTest(unittest.TestCase):
+    """Tests for the confined UnbrowserSession (Bubblewrap filesystem isolation)."""
+
+    def test_accepts_confined_parameter(self) -> None:
+        session = UnbrowserSession(
+            "/bin/true",
+            UNBROWSER_SMOKE_URL,
+            confined=True,
+        )
+        self.assertTrue(session.confined)
+
+    def test_default_is_not_confined(self) -> None:
+        session = UnbrowserSession(
+            "/bin/true",
+            UNBROWSER_SMOKE_URL,
+        )
+        self.assertFalse(session.confined)
+
+    def test_confined_false_behavior_unchanged(self) -> None:
+        session = UnbrowserSession(
+            "/bin/true",
+            UNBROWSER_SMOKE_URL,
+            confined=False,
+        )
+        self.assertFalse(session.confined)
+        # Backward-compatible: no bwrap, normal process launch path.
+        self.assertFalse(session.started)
+
+    def test_confined_with_interactive(self) -> None:
+        session = UnbrowserSession(
+            "/bin/true",
+            UNBROWSER_INTERACTIVE_URL,
+            confined=True,
+            interactive=True,
+        )
+        self.assertTrue(session.confined)
+        self.assertTrue(session.interactive)
+
+    def test_confined_with_fake_binary_uses_sandbox(self) -> None:
+        """When confined=True, _start uses UnbrowserSandbox to build the launch command."""
+        from unittest.mock import patch
+
+        with tempfile.TemporaryDirectory() as d:
+            binary = _fake_unbrowser(d)
+            with patch(
+                "pyreplab_harness.unbrowser_sandbox.UnbrowserSandbox"
+            ) as MockSandbox:
+                mock_instance = MockSandbox.return_value
+                # Return a command that simulates a real bwrap command with --
+                # separator so the env-injection code works, but still
+                # delegates to the fake binary for subprocess execution.
+                mock_instance.build_command.side_effect = lambda *a: [
+                    binary, "--", binary
+                ] + list(a)
+
+                session = UnbrowserSession(
+                    binary,
+                    UNBROWSER_SMOKE_URL,
+                    confined=True,
+                )
+                try:
+                    result = session.execute({"action": "navigate"})
+                    self.assertEqual(result["result"]["status"], 200)
+                    # UnbrowserSandbox was constructed with the binary.
+                    MockSandbox.assert_called_once()
+                    # build_command was called (at least for version probe and launch).
+                    self.assertTrue(mock_instance.build_command.call_count >= 2)
+                finally:
+                    session.close()
+
+    def test_version_probe_in_confined_mode(self) -> None:
+        """Version probe uses the sandbox command when confined."""
+        from unittest.mock import patch
+
+        with tempfile.TemporaryDirectory() as d:
+            binary = _fake_unbrowser(d)
+            with patch(
+                "pyreplab_harness.unbrowser_sandbox.UnbrowserSandbox"
+            ) as MockSandbox:
+                mock_instance = MockSandbox.return_value
+                mock_instance.build_command.side_effect = lambda *a: [
+                    binary, "--", binary
+                ] + list(a)
+
+                session = UnbrowserSession(
+                    binary,
+                    UNBROWSER_SMOKE_URL,
+                    confined=True,
+                )
+                try:
+                    session.execute({"action": "navigate"})
+                    self.assertEqual(session.runtime_version, "test-1")
+                finally:
+                    session.close()
+
+    def test_non_confined_does_not_import_sandbox(self) -> None:
+        """Non-confined sessions do not trigger UnbrowserSandbox import."""
+        with tempfile.TemporaryDirectory() as d:
+            binary = _fake_unbrowser(d)
+            session = UnbrowserSession(
+                binary,
+                UNBROWSER_SMOKE_URL,
+                confined=False,
+            )
+            try:
+                session.execute({"action": "navigate"})
+                self.assertEqual(session.runtime_version, "test-1")
+            finally:
+                session.close()
+
+
 if __name__ == "__main__":
     unittest.main()

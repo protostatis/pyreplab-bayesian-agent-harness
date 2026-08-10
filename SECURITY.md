@@ -29,6 +29,32 @@ The optional Unbrowser smoke is intentionally not a general browsing tool:
 - A separate `unbrowser` child runs as the least-privilege user on the
   disposable SSH runner, outside Bubblewrap, because it requires outbound
   network access.
+- **Confined mode (recommended for fixture/interactive tasks):** When the
+  worker is started with `--confine-unbrowser`, the Unbrowser binary runs
+  inside its own Bubblewrap sandbox that retains network access but restricts
+  filesystem visibility:
+  - The Unbrowser binary is read-only bound.
+  - Minimal runtime libraries (`/usr/lib`, `/lib`, `/lib64`) are read-only
+    bound.
+  - DNS config (`/etc/resolv.conf`) and TLS certs (`/etc/ssl`) are read-only
+    bound.
+  - A fresh `/dev`, `/proc`, and `/tmp` (tmpfs) are provided.
+  - A writable temporary HOME (`/home/unbrowser`) lives inside the sandbox,
+    not on the host.
+  - **The following are NOT mounted and must be unreachable:**
+    - `/home` and any user home directory (project source, SSH keys, agent
+      sockets, model files, Pi installation)
+    - `/root`
+    - The current working directory of the host process
+    - Run artifact directories
+  - Network namespace is intentionally retained (no `--unshare-net`) so the
+    browser can reach fixture pages and Wikipedia over HTTPS.
+  - All other namespaces (user, pid, ipc, mount) are unshared.
+  - The `--clearenv` flag is used, and only explicit `--setenv` variables
+    (HOME, TMPDIR, PATH, LANG, UNBROWSER_TIMEOUT_MS) are set inside the
+    sandbox.
+  - A GNU `timeout` wrapper provides defence-in-depth: if the sandbox hangs,
+    the kernel delivers SIGKILL after the configured timeout.
 - The model cannot provide a URL. The adapter accepts only the exact public
   smoke page `https://example.com/`, checks the final reported URL, and exposes
   only `navigate`, `query`, `text`, and `blockmap`.
@@ -52,6 +78,11 @@ secrets.
 The interactive Unbrowser path (`unbrowser_interactive` family) is a
 **disposable-host plumbing spike, not a security boundary**. It adds
 `click`, `type`, and `submit` to the adapter for the Wikipedia search smoke:
+
+- When `--confine-unbrowser` is enabled, the interactive path runs inside the
+  same Bubblewrap sandbox as the read-only path (see above).  This is the
+  **recommended** configuration for fixture tasks.
+- Without confinement (default), the residual risks listed below apply.
 
 - The initial URL is controller-fixed to `https://en.wikipedia.org/wiki/Main_Page`.
 - After navigation, the adapter checks `status` and `challenge` fields in the
