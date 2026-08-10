@@ -429,5 +429,4 @@ or use the compatibility wrapper:
 
 ## License
 
-No open-source license has been selected yet. Public visibility of the source
-does not grant permission to copy, modify, or redistribute it.
+Licensed under the [MIT License](LICENSE).
