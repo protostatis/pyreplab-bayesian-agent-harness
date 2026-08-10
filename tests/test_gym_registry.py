@@ -23,7 +23,7 @@ class RegistryTest(unittest.TestCase):
     def test_canonical_families(self) -> None:
         self.assertEqual(
             FAMILIES,
-            ("artifact", "sqlite", "shell", "python_repair", "unbrowser"),
+            ("artifact", "sqlite", "shell", "python_repair", "unbrowser", "unbrowser_interactive"),
         )
 
     def test_generate_task_rejects_unknown_family(self) -> None:

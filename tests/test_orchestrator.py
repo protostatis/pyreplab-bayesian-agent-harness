@@ -7,6 +7,7 @@ from pathlib import Path
 from unittest import mock
 
 from pyreplab_harness.orchestrator import (
+    UNBROWSER_INTERACTIVE_TOOL_INTERFACE,
     UNBROWSER_TOOL_INTERFACE,
     RemoteConfig,
     _pair_order,
@@ -22,7 +23,10 @@ from pyreplab_harness.orchestrator import (
     validate_remote_config,
 )
 from pyreplab_harness.treatments import TreatmentRegistry, TreatmentSpec, generate_treatments
-from pyreplab_harness.unbrowser_rpc import UNBROWSER_SMOKE_URL
+from pyreplab_harness.unbrowser_rpc import (
+    UNBROWSER_INTERACTIVE_URL,
+    UNBROWSER_SMOKE_URL,
+)
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -174,7 +178,7 @@ class GeneralizedTreatmentOrchestratorTest(unittest.TestCase):
             policy_spec_from_treatment(
                 TreatmentSpec(**base, allowed_tools=("unbrowser",))
             )
-        with self.assertRaisesRegex(ValueError, "restricted to the unbrowser family"):
+        with self.assertRaisesRegex(ValueError, "restricted to the unbrowser"):
             _unbrowser_url_for_task(
                 {"family": "artifact", "public_metadata": {}}, policy
             )
@@ -224,9 +228,9 @@ class GeneralizedTreatmentOrchestratorTest(unittest.TestCase):
             policy_version="1",
         )
         config = RemoteConfig("host", "/project", "/runs")
-        with self.assertRaisesRegex(ValueError, "requires a registered"):
+        with self.assertRaisesRegex(ValueError, "require.*registered"):
             run_single(PROJECT_ROOT, config, args)
-        with self.assertRaisesRegex(ValueError, "requires registered"):
+        with self.assertRaisesRegex(ValueError, "require.*registered"):
             run_pair(PROJECT_ROOT, config, args)
 
         bash_only = generate_treatments(1, seed=33)[0]
@@ -297,6 +301,132 @@ class GeneralizedTreatmentOrchestratorTest(unittest.TestCase):
             )
             with self.assertRaisesRegex(ValueError, "duplicate treatment"):
                 run_registered_treatments(PROJECT_ROOT, config, duplicate)
+
+    def test_interactive_unbrowser_interface_is_accepted(self) -> None:
+        base = dict(
+            id="unbrowser-interactive-correct",
+            version="1",
+            system_prompt="Use the interactive browser.",
+            max_output_tokens=2048,
+            tool_call_limit=12,
+            command_timeout_seconds=45,
+            wall_time_limit_seconds=360,
+            tool_interface=UNBROWSER_INTERACTIVE_TOOL_INTERFACE,
+        )
+        treatment = TreatmentSpec(
+            **base,
+            allowed_tools=("bash", "unbrowser"),
+        )
+        policy = policy_spec_from_treatment(treatment)
+        self.assertEqual(policy.allowed_tools, ("bash", "unbrowser"))
+        self.assertEqual(policy.tool_interface, UNBROWSER_INTERACTIVE_TOOL_INTERFACE)
+        self.assertEqual(policy.tool_call_limit, 12)
+
+        task = {
+            "family": "unbrowser_interactive",
+            "public_metadata": {"allowed_url": UNBROWSER_INTERACTIVE_URL},
+        }
+        self.assertEqual(
+            _unbrowser_url_for_task(task, policy), UNBROWSER_INTERACTIVE_URL
+        )
+
+    def test_interactive_url_enforces_wikipedia_origin(self) -> None:
+        treatment = TreatmentSpec(
+            id="unbrowser-int",
+            version="1",
+            system_prompt="Prompt",
+            allowed_tools=("bash", "unbrowser"),
+            max_output_tokens=512,
+            tool_call_limit=12,
+            command_timeout_seconds=30,
+            wall_time_limit_seconds=180,
+            tool_interface=UNBROWSER_INTERACTIVE_TOOL_INTERFACE,
+        )
+        policy = policy_spec_from_treatment(treatment)
+
+        task = {
+            "family": "unbrowser_interactive",
+            "public_metadata": {"allowed_url": "https://example.com/"},
+        }
+        with self.assertRaisesRegex(ValueError, "pinned"):
+            _unbrowser_url_for_task(task, policy)
+
+        # Non-interactive tasks with unbrowser tool should still fail if
+        # family is not unbrowser or unbrowser_interactive.
+        artifact_task = {
+            "family": "artifact",
+            "public_metadata": {"allowed_url": UNBROWSER_SMOKE_URL},
+        }
+        with self.assertRaisesRegex(ValueError, "restricted"):
+            _unbrowser_url_for_task(artifact_task, policy)
+
+    def test_interactive_pi_uses_higher_call_limit(self) -> None:
+        treatment = TreatmentSpec(
+            id="unbrowser-int-correct",
+            version="1",
+            system_prompt="Use Unbrowser interactively.",
+            allowed_tools=("bash", "unbrowser"),
+            max_output_tokens=2048,
+            tool_call_limit=12,
+            command_timeout_seconds=45,
+            wall_time_limit_seconds=360,
+            tool_interface=UNBROWSER_INTERACTIVE_TOOL_INTERFACE,
+        )
+        completed = mock.Mock(returncode=0, stdout="", stderr="")
+        with mock.patch(
+            "pyreplab_harness.orchestrator.subprocess.run", return_value=completed
+        ) as runner:
+            _run_pi(
+                PROJECT_ROOT,
+                RemoteConfig("host", "/project", "/runs"),
+                "/runs/workspace",
+                "task prompt",
+                policy_spec_from_treatment(treatment),
+                "pi",
+                None,
+                unbrowser_url=UNBROWSER_INTERACTIVE_URL,
+                unbrowser_binary="/usr/local/bin/unbrowser",
+                unbrowser_interactive=True,
+            )
+        command = runner.call_args.args[0]
+        self.assertEqual(command[command.index("--tools") + 1], "bash,unbrowser")
+        self.assertEqual(
+            command[command.index("--gym-unbrowser-url") + 1],
+            UNBROWSER_INTERACTIVE_URL,
+        )
+        self.assertEqual(
+            command[command.index("--gym-unbrowser-tool-limit") + 1],
+            "12",
+        )
+        self.assertEqual(
+            command[command.index("--gym-unbrowser-interactive") + 1],
+            "true",
+        )
+
+    def test_unbrowser_interactive_family_rejects_legacy_and_mixed_tool_policies(self) -> None:
+        args = argparse.Namespace(
+            family="unbrowser_interactive",
+            policy="direct",
+            policy_version="1",
+        )
+        config = RemoteConfig("host", "/project", "/runs")
+        with self.assertRaisesRegex(ValueError, "require.*registered"):
+            run_single(PROJECT_ROOT, config, args)
+        with self.assertRaisesRegex(ValueError, "require.*registered"):
+            run_pair(PROJECT_ROOT, config, args)
+
+        bash_only = generate_treatments(1, seed=33)[0]
+        registry = TreatmentRegistry((bash_only,))
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "registry.json"
+            registry.save(path)
+            registered_args = argparse.Namespace(
+                family="unbrowser_interactive",
+                treatment_registry=str(path),
+                treatments="all",
+            )
+            with self.assertRaisesRegex(ValueError, "every treatment"):
+                run_registered_treatments(PROJECT_ROOT, config, registered_args)
 
     def test_policy_set_runs_every_bundle_on_one_task(self) -> None:
         treatments = generate_treatments(2, seed=21)

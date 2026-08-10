@@ -146,6 +146,45 @@ verification; the positive control copies `h1` and must pass. The dedicated
 runner exits successfully only when that polarity and both exact tool traces
 are observed. This validates plumbing only; it is not allocator evidence.
 
+### 4b. Run the interactive Unbrowser plumbing spike (disposable host only)
+
+This is a separate interactive path that adds `click`, `type`, and `submit` to
+the Unbrowser adapter, targeting Wikipedia search. It is a **disposable-host
+plumbing spike, not a security boundary**. The existing read-only Unbrowser
+smoke is not modified.
+
+```bash
+python -m pyreplab_harness.unbrowser_interactive_smoke \
+  --host "$PYREPLAB_HARNESS_HOST" \
+  --remote-project "$PYREPLAB_REMOTE_PROJECT" \
+  --remote-run-root "$PYREPLAB_REMOTE_RUN_ROOT/unbrowser-interactive-smoke" \
+  --unbrowser-binary "$PYREPLAB_REMOTE_UNBROWSER" \
+  --provider "$PYREPLAB_PI_PROVIDER" \
+  --model "$PYREPLAB_PI_MODEL" \
+  --seed 7
+```
+
+The task contract requires the agent to:
+1. Navigate to Wikipedia's Main Page
+2. Search for "Bayesian inference" using the search form
+3. Verify the resulting article heading
+4. Click the link to the Bayes' theorem article
+5. Write the final article heading to `result.json`
+
+The frozen registry in
+[`policies/unbrowser-interactive-treatments.json`](policies/unbrowser-interactive-treatments.json)
+contains two equal-budget controls. The intentional negative control stops
+at the search-result page and reports the page title (must fail verification);
+the positive control navigates to Bayes' theorem and reports the correct
+heading (must pass).
+
+The interactive adapter enforces same-origin navigation
+(`en.wikipedia.org` only), checks status/challenge fields after navigation,
+and rejects stale or unknown element refs. This is explicitly documented as
+**NOT** SSRF-safe: the outbound HTTP request occurs before the final URL is
+checked, and redirect/DNS is not connection-level enforced. Run only on a
+disposable host.
+
 ### 5. Run the two-policy outcome-model smoke
 
 This synthetic probe fits the Bayesian outcome model on deliberately generated

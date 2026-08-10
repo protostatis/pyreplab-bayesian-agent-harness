@@ -17,10 +17,11 @@ from typing import Any
 from .contracts import PolicySpec
 from .gym_registry import FAMILIES
 from .treatments import TreatmentRegistry, TreatmentSpec, to_policy_spec_kwargs
-from .unbrowser_rpc import validate_smoke_url
+from .unbrowser_rpc import validate_interactive_url, validate_smoke_url
 
 
 UNBROWSER_TOOL_INTERFACE = "native_bash_unbrowser_readonly_v1"
+UNBROWSER_INTERACTIVE_TOOL_INTERFACE = "native_bash_unbrowser_interactive_v1"
 
 
 @dataclass(frozen=True)
@@ -206,14 +207,16 @@ def policy_spec(project_root: Path, policy_id: str, version: str = "1") -> Polic
 def policy_spec_from_treatment(treatment: TreatmentSpec) -> PolicySpec:
     """Convert one immutable registry entry into an executable policy.
 
-    The Pi gym supports the native sandboxed ``bash`` interface and one narrow
-    fixed-page, read-only Unbrowser interface. Other registry descriptors fail
-    closed until a matching adapter exists.
+    The Pi gym supports the native sandboxed ``bash`` interface, one narrow
+    fixed-page read-only Unbrowser interface, and one interactive Unbrowser
+    interface. Other registry descriptors fail closed until a matching adapter
+    exists.
     """
 
     supported = {
         "native_bash": frozenset({"bash"}),
         UNBROWSER_TOOL_INTERFACE: frozenset({"bash", "unbrowser"}),
+        UNBROWSER_INTERACTIVE_TOOL_INTERFACE: frozenset({"bash", "unbrowser"}),
     }
     expected_tools = supported.get(treatment.tool_interface)
     if expected_tools is None:
@@ -247,6 +250,7 @@ def _run_pi(
     thinking: str = "off",
     unbrowser_url: str | None = None,
     unbrowser_binary: str = "/usr/local/bin/unbrowser",
+    unbrowser_interactive: bool = False,
 ) -> subprocess.CompletedProcess[str]:
     # Keep the extension outside .pi/extensions so normal Pi sessions in this
     # repository never auto-discover the restrictive gym tool configuration.
@@ -259,7 +263,10 @@ def _run_pi(
     if "unbrowser" in active_tools:
         if unbrowser_url is None:
             raise ValueError("an exact Unbrowser smoke URL is required")
-        validate_smoke_url(unbrowser_url)
+        if unbrowser_interactive:
+            validate_interactive_url(unbrowser_url)
+        else:
+            validate_smoke_url(unbrowser_url)
         if not unbrowser_binary.startswith("/") or "\n" in unbrowser_binary:
             raise ValueError("unbrowser binary must be an absolute remote path")
     elif unbrowser_url is not None:
@@ -318,6 +325,7 @@ def _run_pi(
         ]
     )
     if unbrowser_url is not None:
+        unbrowser_tool_limit = 12 if unbrowser_interactive else 3
         command.extend(
             [
                 "--gym-unbrowser-url",
@@ -327,9 +335,16 @@ def _run_pi(
                 "--gym-unbrowser-timeout",
                 str(min(policy.command_timeout_seconds, 30)),
                 "--gym-unbrowser-tool-limit",
-                "3",
+                str(unbrowser_tool_limit),
             ]
         )
+        if unbrowser_interactive:
+            command.extend(
+                [
+                    "--gym-unbrowser-interactive",
+                    "true",
+                ]
+            )
     command.extend(
         [
             "--append-system-prompt",
@@ -361,6 +376,7 @@ def _run_pi_checked(
     thinking: str = "off",
     unbrowser_url: str | None = None,
     unbrowser_binary: str = "/usr/local/bin/unbrowser",
+    unbrowser_interactive: bool = False,
 ) -> subprocess.CompletedProcess[str]:
     """Run Pi, converting a wall-clock timeout into a failed run.
 
@@ -381,6 +397,7 @@ def _run_pi_checked(
             thinking,
             unbrowser_url,
             unbrowser_binary,
+            unbrowser_interactive,
         )
     except subprocess.TimeoutExpired as error:
 
@@ -446,14 +463,21 @@ def _unbrowser_url_for_task(
 
     if "unbrowser" not in policy.allowed_tools:
         return None
-    if task.get("family") != "unbrowser":
-        raise ValueError("the Unbrowser tool is restricted to the unbrowser family")
+    family = task.get("family")
+    if family not in {"unbrowser", "unbrowser_interactive"}:
+        raise ValueError(
+            "the Unbrowser tool is restricted to the unbrowser and "
+            "unbrowser_interactive families"
+        )
     metadata = task.get("public_metadata")
     if not isinstance(metadata, dict):
         raise ValueError("Unbrowser task public_metadata must be an object")
     url = metadata.get("allowed_url")
     if not isinstance(url, str):
         raise ValueError("Unbrowser task omitted its exact allowed_url")
+
+    if family == "unbrowser_interactive":
+        return validate_interactive_url(url)
     return validate_smoke_url(url)
 
 
@@ -517,6 +541,7 @@ def _run_attempt(
         getattr(args, "thinking", "off"),
         _unbrowser_url_for_task(task, policy),
         getattr(args, "unbrowser_binary", "/usr/local/bin/unbrowser"),
+        unbrowser_interactive=(task.get("family") == "unbrowser_interactive"),
     )
     pi_seconds = time.monotonic() - phase_started
 
@@ -604,9 +629,10 @@ def _run_attempt(
 def run_single(
     project_root: Path, config: RemoteConfig, args: argparse.Namespace
 ) -> dict[str, Any]:
-    if args.family == "unbrowser":
+    if args.family in {"unbrowser", "unbrowser_interactive"}:
         raise ValueError(
-            "the unbrowser family requires a registered read-only Unbrowser treatment"
+            "the unbrowser and unbrowser_interactive families require a "
+            "registered treatment"
         )
     policy = policy_spec(project_root, args.policy, getattr(args, "policy_version", "1"))
     task = _task_json(config, args)
@@ -622,9 +648,10 @@ def run_pair(
     The task is generated once; the policies share it. Execution order is
     randomized deterministically from the seed.
     """
-    if args.family == "unbrowser":
+    if args.family in {"unbrowser", "unbrowser_interactive"}:
         raise ValueError(
-            "the unbrowser family requires registered read-only Unbrowser treatments"
+            "the unbrowser and unbrowser_interactive families require "
+            "registered treatments"
         )
     policy_version = getattr(args, "policy_version", "1")
     policies = {
@@ -746,21 +773,21 @@ def run_registered_treatments(
         for reference, policy in selected.items()
     }
     family = getattr(args, "family", "artifact")
-    if family == "unbrowser" and not all(has_unbrowser.values()):
+    if family in {"unbrowser", "unbrowser_interactive"} and not all(has_unbrowser.values()):
         missing = sorted(
             reference for reference, enabled in has_unbrowser.items() if not enabled
         )
         raise ValueError(
-            "the unbrowser family requires the read-only Unbrowser tool in every "
+            f"the {family} family requires the Unbrowser tool in every "
             f"treatment; missing from {missing!r}"
         )
-    if family != "unbrowser" and any(has_unbrowser.values()):
+    if family not in {"unbrowser", "unbrowser_interactive"} and any(has_unbrowser.values()):
         enabled = sorted(
             reference for reference, value in has_unbrowser.items() if value
         )
         raise ValueError(
-            "read-only Unbrowser treatments are restricted to the unbrowser "
-            f"family; present in {enabled!r}"
+            "Unbrowser treatments are restricted to the unbrowser and "
+            f"unbrowser_interactive families; present in {enabled!r}"
         )
     return _run_policy_set(
         project_root,

@@ -1,8 +1,9 @@
-"""Strict read-only adapter for the live Unbrowser smoke test.
+"""Strict read-only and interactive adapters for the live Unbrowser smoke test.
 
 The model never supplies a URL or raw JSON-RPC payload.  This adapter owns one
-fresh ``unbrowser`` process, pins navigation to the fixed public smoke page,
-and exposes only four non-mutating actions.  It intentionally runs outside the
+fresh ``unbrowser`` process, pins navigation to the fixed public smoke page
+(read-only) or Wikipedia (interactive), and exposes non-mutating actions plus
+click/type/submit for the interactive path.  It intentionally runs outside the
 Bubblewrap command sandbox, so this module is the network security boundary.
 """
 
@@ -20,8 +21,13 @@ from typing import Any, Mapping
 
 
 UNBROWSER_SMOKE_URL = "https://example.com/"
+UNBROWSER_INTERACTIVE_URL = "https://en.wikipedia.org/wiki/Main_Page"
+UNBROWSER_INTERACTIVE_ORIGIN = "https://en.wikipedia.org/"
 READ_ONLY_ACTIONS = frozenset({"navigate", "query", "text", "blockmap"})
+INTERACTIVE_ACTIONS = READ_ONLY_ACTIONS | {"click", "type", "submit"}
 MAX_SELECTOR_CHARS = 256
+MAX_REF_CHARS = 256
+MAX_TYPE_TEXT_CHARS = 1024
 MAX_RPC_LINE_BYTES = 256 * 1024
 DEFAULT_MAX_RESULT_BYTES = 64 * 1024
 
@@ -40,8 +46,29 @@ def validate_smoke_url(url: str) -> str:
     return url
 
 
+def validate_interactive_url(url: str) -> str:
+    """Accept only a fixed Wikipedia URL with same-origin enforcement.
+
+    The initial URL is controller-fixed to the Wikipedia main page.
+    After click/submit, the final URL may change within the same origin.
+    This is explicitly NOT an SSRF defence.
+    """
+
+    if not url.startswith(UNBROWSER_INTERACTIVE_ORIGIN):
+        raise ValueError(
+            f"unbrowser interactive is pinned to {UNBROWSER_INTERACTIVE_ORIGIN}; got {url!r}"
+        )
+    return url
+
+
 class UnbrowserSession:
-    """One isolated, fixed-page Unbrowser JSON-RPC session."""
+    """One isolated, fixed-page Unbrowser JSON-RPC session.
+
+    In read-only mode (default), navigation is pinned to an exact URL and only
+    non-mutating actions are allowed.  In interactive mode, click/type/submit
+    are additionally available and same-origin Wikipedia URL changes are
+    permitted after navigation.
+    """
 
     def __init__(
         self,
@@ -50,6 +77,7 @@ class UnbrowserSession:
         *,
         timeout_seconds: int = 30,
         max_result_bytes: int = DEFAULT_MAX_RESULT_BYTES,
+        interactive: bool = False,
     ) -> None:
         binary_path = Path(binary)
         if not binary_path.is_absolute():
@@ -60,10 +88,15 @@ class UnbrowserSession:
             raise ValueError("unbrowser max result bytes must be positive")
 
         self.binary = str(binary_path)
-        self.allowed_url = validate_smoke_url(allowed_url)
         self.timeout_seconds = int(timeout_seconds)
         self.max_result_bytes = int(max_result_bytes)
         self.runtime_version: str | None = None
+        self.interactive = bool(interactive)
+
+        if self.interactive:
+            self.allowed_url = validate_interactive_url(allowed_url)
+        else:
+            self.allowed_url = validate_smoke_url(allowed_url)
 
         self._process: subprocess.Popen[bytes] | None = None
         self._temporary_home: tempfile.TemporaryDirectory[str] | None = None
@@ -232,32 +265,118 @@ class UnbrowserSession:
             raise ValueError("selector must not contain control-line characters")
         return value
 
-    def execute(self, params: Mapping[str, Any]) -> dict[str, Any]:
-        """Validate and execute one model-requested read-only action."""
+    @staticmethod
+    def _validate_ref(value: Any) -> str:
+        if not isinstance(value, str) or not value.strip():
+            raise ValueError("ref must be a non-empty string")
+        if len(value) > MAX_REF_CHARS:
+            raise ValueError(f"ref must be at most {MAX_REF_CHARS} characters")
+        if "\x00" in value or "\n" in value or "\r" in value:
+            raise ValueError("ref must not contain control-line characters")
+        return value
 
-        unknown = set(params) - {"action", "selector"}
-        if unknown:
-            raise ValueError(f"unknown unbrowser parameters: {sorted(unknown)!r}")
-        action = params.get("action")
-        if not isinstance(action, str) or action not in READ_ONLY_ACTIONS:
+    @staticmethod
+    def _validate_type_text(value: Any) -> str:
+        if not isinstance(value, str):
+            raise ValueError("type value must be a string")
+        if len(value) > MAX_TYPE_TEXT_CHARS:
             raise ValueError(
-                f"unbrowser action must be one of {sorted(READ_ONLY_ACTIONS)!r}"
+                f"type value must be at most {MAX_TYPE_TEXT_CHARS} characters"
             )
+        if "\x00" in value:
+            raise ValueError("type value must not contain NUL bytes")
+        return value
 
-        selector = params.get("selector")
-        if action == "navigate":
-            if selector is not None:
-                raise ValueError("navigate does not accept a selector")
-            result = self._request("navigate", {"url": self.allowed_url})
-            if not isinstance(result, dict):
-                raise UnbrowserProtocolError("navigate result must be an object")
+    def _check_navigate_result(self, result: Any) -> bool:
+        """Validate the navigate result and enforce URL/origin rules.
+
+        Returns ``True`` when navigation succeeded and further actions are
+        allowed.  Returns ``False`` when status is non-200 or a challenge is
+        present (interactive mode only).  Raises when the returned URL leaves
+        the allowed origin.
+        """
+        if not isinstance(result, dict):
+            raise UnbrowserProtocolError("navigate result must be an object")
+
+        if self.interactive:
+            status = result.get("status")
+            challenge = result.get("challenge")
+            if status != 200 or (challenge is not None and challenge):
+                return False
+            returned_url = result.get("url")
+            if not isinstance(returned_url, str) or not returned_url.startswith(
+                UNBROWSER_INTERACTIVE_ORIGIN
+            ):
+                self._kill()
+                raise UnbrowserProtocolError(
+                    f"unbrowser left wikipedia: {returned_url!r}"
+                )
+            return True
+        else:
             returned_url = result.get("url")
             if returned_url != self.allowed_url:
                 self._kill()
                 raise UnbrowserProtocolError(
                     f"unbrowser left the fixed page: {returned_url!r}"
                 )
-            self._navigated = True
+            return True
+
+    def execute(self, params: Mapping[str, Any]) -> dict[str, Any]:
+        """Validate and execute one model-requested action.
+
+        In read-only mode only ``navigate``, ``query``, ``text``, and
+        ``blockmap`` are available.  In interactive mode ``click``, ``type``,
+        and ``submit`` are additionally available.
+        """
+
+        allowed_actions = INTERACTIVE_ACTIONS if self.interactive else READ_ONLY_ACTIONS
+        interact_params = {"ref", "value"} if self.interactive else set()
+        known = {"action", "selector"} | interact_params
+        unknown = set(params) - known
+        if unknown:
+            raise ValueError(f"unknown unbrowser parameters: {sorted(unknown)!r}")
+        action = params.get("action")
+        if not isinstance(action, str) or action not in allowed_actions:
+            raise ValueError(
+                f"unbrowser action must be one of {sorted(allowed_actions)!r}"
+            )
+
+        selector = params.get("selector")
+        if action == "navigate":
+            if selector is not None:
+                raise ValueError("navigate does not accept a selector")
+            if self.interactive:
+                if "ref" in params or "value" in params:
+                    raise ValueError("navigate does not accept ref or value")
+            result = self._request("navigate", {"url": self.allowed_url})
+            self._navigated = self._check_navigate_result(result)
+        elif action in {"click", "submit"}:
+            if not self._navigated:
+                raise ValueError("navigate must succeed before other unbrowser actions")
+            ref = params.get("ref")
+            self._validate_ref(ref)
+            if action == "click":
+                result = self._request("click", {"ref": ref})
+            else:
+                result = self._request("submit", {"ref": ref})
+            # After click/submit, the URL may change.  Enforce same-origin.
+            if isinstance(result, dict):
+                returned_url = result.get("url")
+                if isinstance(returned_url, str) and not returned_url.startswith(
+                    UNBROWSER_INTERACTIVE_ORIGIN
+                ):
+                    self._kill()
+                    raise UnbrowserProtocolError(
+                        f"unbrowser left wikipedia: {returned_url!r}"
+                    )
+        elif action == "type":
+            if not self._navigated:
+                raise ValueError("navigate must succeed before other unbrowser actions")
+            ref = params.get("ref")
+            value = params.get("value")
+            self._validate_ref(ref)
+            self._validate_type_text(value)
+            result = self._request("type", {"ref": ref, "text": value})
         else:
             if not self._navigated:
                 raise ValueError("navigate must succeed before other unbrowser actions")
@@ -265,17 +384,19 @@ class UnbrowserSession:
                 result = self._request(
                     action, {"selector": self._validate_selector(selector)}
                 )
-            else:
+            else:  # blockmap
                 if selector is not None:
                     raise ValueError("blockmap does not accept a selector")
                 result = self._request("blockmap")
 
-        wrapped = {
+        wrapped: dict[str, Any] = {
             "action": action,
             "allowed_url": self.allowed_url,
             "runtime_version": self.runtime_version,
             "result": result,
         }
+        if self.interactive:
+            wrapped["interactive"] = True
         encoded = json.dumps(
             wrapped, sort_keys=True, ensure_ascii=False, separators=(",", ":")
         ).encode("utf-8")

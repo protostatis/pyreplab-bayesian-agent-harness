@@ -47,6 +47,46 @@ targets, add credentials, or expose mutating/advanced methods without a new
 security review. Run this smoke only on a disposable runner that contains no
 secrets.
 
+## Interactive Unbrowser plumbing spike
+
+The interactive Unbrowser path (`unbrowser_interactive` family) is a
+**disposable-host plumbing spike, not a security boundary**. It adds
+`click`, `type`, and `submit` to the adapter for the Wikipedia search smoke:
+
+- The initial URL is controller-fixed to `https://en.wikipedia.org/wiki/Main_Page`.
+- After navigation, the adapter checks `status` and `challenge` fields in the
+  response. Non-200 status or a present challenge blocks all further
+  read/interactive actions until a fresh `navigate` succeeds.
+- After `click` or `submit`, the adapter enforces same-origin: the final URL
+  must start with `https://en.wikipedia.org/`. Off-origin URLs kill the
+  process group immediately.
+- Element refs from `query`/`text`/`blockmap` results are session-scoped and
+  become stale after navigation. Unknown or stale refs fail closed with a
+  clear error.
+- `type` values are bounded (max 1024 chars, no NUL bytes). Ref strings are
+  bounded (max 256 chars) with no control characters.
+- **No** cookies, authentication, JavaScript evaluation (`eval`/QuickJS),
+  downloads, `POST` requests, arbitrary URL navigation, or raw JSON-RPC
+  are exposed.
+
+**Explicit residual risks:**
+
+1. This is **NOT** SSRF-safe. The outbound HTTP request occurs before the
+   final URL can be checked. Redirects, DNS rebinding, or connection-level
+   attacks are not prevented.
+2. The adapter runs outside Bubblewrap on the disposable SSH runner. Do not
+   run on a host containing secrets, credentials, or production data.
+3. Only `GET`-based form submission is supported. Any form requiring `POST`
+   should fail.
+4. The same-origin enforcement is a post-navigation check, not a connection-
+   level filter. A malicious Wikipedia article could theoretically link to
+   an off-origin page, though this would be caught and kill the session.
+
+This path shares the base Unbrowser security constraints (fresh process per
+attempt, bounded JSON-RPC lines, timeouts, result-size limits, minimal
+environment, process group kill on failure). Use only with a dedicated
+least-privilege SSH identity and disposable runner.
+
 ## Sensitive outputs
 
 `.runs/` may contain prompts, trajectories, model outputs, generated files,
