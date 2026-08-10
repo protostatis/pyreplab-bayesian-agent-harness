@@ -252,6 +252,19 @@ class UnbrowserInteractiveSessionTest(unittest.TestCase):
                 result = session.execute({"action": "submit", "ref": "e:search"})
                 self.assertEqual(result["action"], "submit")
 
+    def test_explicit_interaction_error_fails_closed(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            with UnbrowserSession(
+                _fake_unbrowser_interactive(directory),
+                UNBROWSER_INTERACTIVE_URL,
+                interactive=True,
+            ) as session:
+                session.execute({"action": "navigate"})
+                with self.assertRaisesRegex(
+                    UnbrowserProtocolError, "submit failed: unknown ref"
+                ):
+                    session.execute({"action": "submit", "ref": "e:unknown"})
+
     def test_non_navigate_requires_prior_navigate(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             session = UnbrowserSession(

@@ -25,8 +25,8 @@ class UnbrowserInteractiveGymTest(unittest.TestCase):
                 task_a.public_metadata["allowed_url"], UNBROWSER_INTERACTIVE_URL
             )
             # The expected heading appears in the task prompt/contract as
-            # part of the natural-language instructions ("Click the link to go
-            # to the Bayes' theorem article"), which is acceptable since the
+            # part of the natural-language instructions ("Click the exact link
+            # to go to the Bayesian statistics article"), which is acceptable since the
             # agent must still navigate and extract the heading from the page.
             self.assertNotIn(
                 EXPECTED_RESULT["heading"],

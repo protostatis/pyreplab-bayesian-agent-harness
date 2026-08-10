@@ -168,15 +168,23 @@ The task contract requires the agent to:
 1. Navigate to Wikipedia's Main Page
 2. Search for "Bayesian inference" using the search form
 3. Verify the resulting article heading
-4. Click the link to the Bayes' theorem article
+4. Click the exact link to the Bayesian statistics article
 5. Write the final article heading to `result.json`
 
 The frozen registry in
 [`policies/unbrowser-interactive-treatments.json`](policies/unbrowser-interactive-treatments.json)
 contains two equal-budget controls. The intentional negative control stops
 at the search-result page and reports the page title (must fail verification);
-the positive control navigates to Bayes' theorem and reports the correct
+the positive control navigates to Bayesian statistics and reports the correct
 heading (must pass).
+
+The live M0 run on 2026-08-10 passed this polarity with remote Unbrowser
+`0.0.18`: the positive control completed the required
+`navigate/query/type/query/submit/text/query/click/text` trace and verified
+successfully, while the negative control completed its search flow and failed
+with `semantic_mismatch` as declared. This is operational plumbing evidence
+only. The M3 preregistration pins `0.0.19`, which must be installed and hashed
+before outcome-data collection begins.
 
 The interactive adapter enforces same-origin navigation
 (`en.wikipedia.org` only), checks status/challenge fields after navigation,

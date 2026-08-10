@@ -44,6 +44,25 @@ const UNBROWSER_SMOKE_URL = "https://example.com/";
 const UNBROWSER_INTERACTIVE_ORIGIN = "https://en.wikipedia.org/";
 const FIXTURE_INTERACTIVE_ORIGIN = "http://127.0.0.1:18090/";
 
+/**
+ * Tool schemas are registered before Pi resolves extension flags. Read the raw
+ * CLI here so the immutable schema matches the runtime mode selected later.
+ */
+function commandLineFlagIsTrue(name: string): boolean {
+  const flag = `--${name}`;
+  const prefix = `${flag}=`;
+  for (let index = 0; index < process.argv.length; index++) {
+    const value = process.argv[index];
+    if (value === flag) {
+      return (process.argv[index + 1] ?? "").toLowerCase() === "true";
+    }
+    if (value.startsWith(prefix)) {
+      return value.slice(prefix.length).toLowerCase() === "true";
+    }
+  }
+  return false;
+}
+
 /** Reject values that contain newlines or NUL bytes. */
 function validateNoNewlines(label: string, value: string): void {
   if (NEWLINE_OR_NUL.test(value)) {
@@ -323,6 +342,8 @@ async function shutdownWorker(): Promise<void> {
 // ---------------------------------------------------------------------------
 
 export default function (pi: ExtensionAPI) {
+  const registeredInteractive = commandLineFlagIsTrue("gym-unbrowser-interactive");
+
   // ---- CLI flags ----
 
   pi.registerFlag("gym-host", {
@@ -463,6 +484,13 @@ export default function (pi: ExtensionAPI) {
     unbrowserCallCount = 0;
 
     const cfg = getConfig();
+
+    if (registeredInteractive !== cfg.unbrowserInteractive) {
+      throw new Error(
+        "Unbrowser tool schema mode does not match --gym-unbrowser-interactive; " +
+        "the extension must receive an explicit true/false CLI value",
+      );
+    }
 
     // Validate required flags
     if (!cfg.host) {
@@ -627,7 +655,7 @@ export default function (pi: ExtensionAPI) {
   // ---- Register the Unbrowser tool ----
 
   const interactiveActions: Array<ReturnType<typeof Type.Literal>> = [];
-  if (getConfig().unbrowserInteractive) {
+  if (registeredInteractive) {
     interactiveActions.push(
       Type.Literal("click"),
       Type.Literal("type"),
@@ -637,14 +665,14 @@ export default function (pi: ExtensionAPI) {
 
   pi.registerTool({
     name: "unbrowser",
-    label: getConfig().unbrowserInteractive
+    label: registeredInteractive
       ? "Unbrowser (fixed-page interactive)"
       : "Unbrowser (fixed-page read-only)",
-    description: getConfig().unbrowserInteractive
-      ? "Inspect and interact with the configured Wikipedia page. The initial URL is " +
+    description: registeredInteractive
+      ? "Inspect and interact with the configured page. The initial URL is " +
         "fixed by the harness and cannot be supplied by the model. Call navigate first, " +
         "then use text, query, blockmap, click, type, or submit. This tool cannot set " +
-        "cookies, evaluate JavaScript, download files, or navigate outside Wikipedia."
+        "cookies, evaluate JavaScript, download files, or leave the configured origin."
       : "Inspect the single configured public smoke page. The URL is fixed by the harness " +
         "and cannot be supplied by the model. Call navigate first, then use text, query, " +
         "or blockmap. This tool cannot click, submit, set cookies, evaluate JavaScript, " +

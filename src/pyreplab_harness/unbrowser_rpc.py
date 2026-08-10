@@ -394,14 +394,39 @@ class UnbrowserSession:
                     f"unbrowser left the allowed origin: {returned_url!r}"
                 )
             return True
-        else:
-            returned_url = result.get("url")
-            if returned_url != self.allowed_url:
-                self._kill()
-                raise UnbrowserProtocolError(
-                    f"unbrowser left the fixed page: {returned_url!r}"
-                )
-            return True
+
+        returned_url = result.get("url")
+        if returned_url != self.allowed_url:
+            self._kill()
+            raise UnbrowserProtocolError(
+                f"unbrowser left the fixed page: {returned_url!r}"
+            )
+        return True
+
+    def _check_interaction_result(self, action: str, result: Any) -> None:
+        """Fail closed on explicit interaction errors and validate transitions."""
+
+        if not isinstance(result, dict):
+            return
+        error = result.get("error")
+        if result.get("ok") is False or error:
+            detail = error if isinstance(error, str) and error else "operation failed"
+            raise UnbrowserProtocolError(f"unbrowser {action} failed: {detail}")
+
+        # Navigation-producing interactions return status/challenge metadata.
+        # Non-navigation clicks may return only an element result, so retain the
+        # current page state when those fields are absent.
+        if "status" in result or "challenge" in result:
+            self._navigated = self._check_navigate_result(result)
+            return
+
+        returned_url = result.get("url")
+        origin = self._interactive_origin
+        if isinstance(returned_url, str) and not returned_url.startswith(origin):
+            self._kill()
+            raise UnbrowserProtocolError(
+                f"unbrowser left the allowed origin: {returned_url!r}"
+            )
 
     def execute(self, params: Mapping[str, Any]) -> dict[str, Any]:
         """Validate and execute one model-requested action.
@@ -441,15 +466,7 @@ class UnbrowserSession:
                 result = self._request("click", {"ref": ref})
             else:
                 result = self._request("submit", {"ref": ref})
-            # After click/submit, the URL may change.  Enforce same-origin.
-            if isinstance(result, dict):
-                returned_url = result.get("url")
-                origin = self._interactive_origin
-                if isinstance(returned_url, str) and not returned_url.startswith(origin):
-                    self._kill()
-                    raise UnbrowserProtocolError(
-                        f"unbrowser left the allowed origin: {returned_url!r}"
-                    )
+            self._check_interaction_result(action, result)
         elif action == "type":
             if not self._navigated:
                 raise ValueError("navigate must succeed before other unbrowser actions")
@@ -458,6 +475,7 @@ class UnbrowserSession:
             self._validate_ref(ref)
             self._validate_type_text(value)
             result = self._request("type", {"ref": ref, "text": value})
+            self._check_interaction_result(action, result)
         else:
             if not self._navigated:
                 raise ValueError("navigate must succeed before other unbrowser actions")

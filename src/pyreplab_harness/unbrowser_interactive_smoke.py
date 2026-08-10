@@ -64,7 +64,9 @@ def _evaluate_interactive_smoke(result: dict[str, Any]) -> dict[str, Any]:
                 if not isinstance(item, dict) or item.get("tool_name") != "unbrowser":
                     continue
                 details = item.get("details")
-                unbrowser_calls.append(details if isinstance(details, dict) else {})
+                call = dict(details) if isinstance(details, dict) else {}
+                call["is_error"] = bool(item.get("is_error"))
+                unbrowser_calls.append(call)
         observed = [
             call.get("action") for call in unbrowser_calls
         ]
@@ -90,7 +92,7 @@ def _evaluate_interactive_smoke(result: dict[str, Any]) -> dict[str, Any]:
                     f"'type'; observed {observed!r}"
                 )
 
-        if any(call.get("error") for call in unbrowser_calls):
+        if any(call.get("is_error") or call.get("error") for call in unbrowser_calls):
             problems.append(f"{policy_id} reported an Unbrowser adapter error")
         versions = {
             call.get("runtime_version")

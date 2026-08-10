@@ -16,13 +16,13 @@ from .io_utils import read_json, write_json
 from .unbrowser_rpc import UNBROWSER_INTERACTIVE_URL
 
 
-GENERATOR_VERSION = "unbrowser-interactive-wikipedia-v1"
-TEMPLATE_ID = "wikipedia-bayesian-search-v1"
+GENERATOR_VERSION = "unbrowser-interactive-wikipedia-v2"
+TEMPLATE_ID = "wikipedia-bayesian-search-v2"
 VERIFIER_ID = "unbrowser-interactive-heading-json"
-VERIFIER_VERSION = "1"
+VERIFIER_VERSION = "2"
 DIFFICULTIES = {"easy", "medium", "hard"}
 SAFE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$")
-EXPECTED_RESULT = {"heading": "Bayes' theorem"}
+EXPECTED_RESULT = {"heading": "Bayesian statistics"}
 SEARCH_TERM = "Bayesian inference"
 
 
@@ -71,7 +71,7 @@ def generate_unbrowser_interactive_task(
         "(Wikipedia Main Page).",
         "Search for the term 'Bayesian inference' using the search form.",
         "Verify the resulting article heading is correct.",
-        "Click the link to go to the Bayes' theorem article.",
+        "Click the exact link to go to the Bayesian statistics article.",
         "Read the text of the first h1 element of the final page.",
         "Write result.json as a JSON object with exactly one string "
         "field named 'heading'.",
