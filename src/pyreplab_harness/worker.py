@@ -6,10 +6,38 @@ import sys
 from dataclasses import dataclass
 from typing import Any, TextIO
 
+from .fixture_server import FixtureServer
 from .sandbox import BubblewrapSandbox, SandboxLimits
-from .unbrowser_rpc import DEFAULT_MAX_RESULT_BYTES, UnbrowserSession
+from .unbrowser_rpc import DEFAULT_MAX_RESULT_BYTES, FIXTURE_URL_PREFIX, UnbrowserSession
 
 PROTOCOL_VERSION = 1
+FIXTURE_PORT = 18090
+
+_fixture_server_instance: FixtureServer | None = None
+
+
+def ensure_fixture_server() -> FixtureServer | None:
+    """Start the fixture server on the fixed port if not already running.
+
+    Returns the FixtureServer instance, or None if it could not be started
+    (e.g. port already in use).
+    """
+    global _fixture_server_instance
+    if _fixture_server_instance is None:
+        try:
+            _fixture_server_instance = FixtureServer(port=FIXTURE_PORT)
+        except OSError:
+            # Port already in use — another worker may have started it.
+            pass
+    return _fixture_server_instance
+
+
+def stop_fixture_server() -> None:
+    """Shut down the fixture server if it was started by this worker."""
+    global _fixture_server_instance
+    if _fixture_server_instance is not None:
+        _fixture_server_instance.stop()
+        _fixture_server_instance = None
 
 
 @dataclass(frozen=True)
@@ -117,6 +145,12 @@ def add_worker_arguments(parser: argparse.ArgumentParser) -> None:
         "--unbrowser-max-result-bytes", type=int, default=DEFAULT_MAX_RESULT_BYTES
     )
     parser.add_argument(
+        "--unbrowser-interactive",
+        action="store_true",
+        default=False,
+        help="enable interactive Unbrowser actions (click, type, submit)",
+    )
+    parser.add_argument(
         "--confine-unbrowser",
         action="store_true",
         default=False,
@@ -132,13 +166,27 @@ def run_from_args(args: argparse.Namespace) -> int:
         cpu_quota=args.cpu_quota,
     )
     sandbox = BubblewrapSandbox(args.root, args.workspace, limits)
+
+    unbrowser_url: str | None = args.unbrowser_url
+    is_fixture = bool(unbrowser_url and unbrowser_url.startswith(FIXTURE_URL_PREFIX))
+    if is_fixture:
+        ensure_fixture_server()
+
+    # Auto-confine for fixture tasks unless explicitly disabled.
+    confine_unbrowser = bool(args.confine_unbrowser) or is_fixture
+
     unbrowser = None
-    if args.unbrowser_url:
+    if unbrowser_url:
         unbrowser = UnbrowserSession(
             args.unbrowser_binary,
-            args.unbrowser_url,
+            unbrowser_url,
             timeout_seconds=args.unbrowser_timeout,
             max_result_bytes=args.unbrowser_max_result_bytes,
-            confined=args.confine_unbrowser,
+            interactive=bool(args.unbrowser_interactive or is_fixture),
+            confined=confine_unbrowser,
         )
-    return serve(sandbox, sys.stdin, sys.stdout, args.max_timeout, unbrowser)
+    try:
+        return serve(sandbox, sys.stdin, sys.stdout, args.max_timeout, unbrowser)
+    finally:
+        if is_fixture:
+            stop_fixture_server()

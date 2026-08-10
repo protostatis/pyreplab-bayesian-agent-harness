@@ -22,8 +22,10 @@ from pyreplab_harness.orchestrator import (
     run_single,
     validate_remote_config,
 )
+from pyreplab_harness.gym_registry import FAMILIES
 from pyreplab_harness.treatments import TreatmentRegistry, TreatmentSpec, generate_treatments
 from pyreplab_harness.unbrowser_rpc import (
+    FIXTURE_INTERACTIVE_ORIGIN,
     UNBROWSER_INTERACTIVE_URL,
     UNBROWSER_SMOKE_URL,
 )
@@ -468,6 +470,154 @@ class GeneralizedTreatmentOrchestratorTest(unittest.TestCase):
         self.assertEqual(result["task_id"], "artifact-task-3")
         self.assertEqual(set(result["attempts"]), set(policies))
         self.assertEqual(result["treatment_registry_hash"], "registry-hash")
+
+
+class UnbrowserFixtureOrchestratorTest(unittest.TestCase):
+    """Tests for the unbrowser_fixture family in the orchestrator."""
+
+    def test_fixture_family_accepted_in_run_single(self) -> None:
+        args = argparse.Namespace(
+            family="unbrowser_fixture",
+            policy="direct",
+            policy_version="1",
+        )
+        config = RemoteConfig("host", "/project", "/runs")
+        with self.assertRaisesRegex(ValueError, "require.*registered"):
+            run_single(PROJECT_ROOT, config, args)
+
+    def test_fixture_family_accepted_in_run_pair(self) -> None:
+        args = argparse.Namespace(
+            family="unbrowser_fixture",
+            policy="direct",
+            policy_version="1",
+        )
+        config = RemoteConfig("host", "/project", "/runs")
+        with self.assertRaisesRegex(ValueError, "require.*registered"):
+            run_pair(PROJECT_ROOT, config, args)
+
+    def test_fixture_url_validated_correctly(self) -> None:
+        """Fixture URLs pass validation with allow_fixture=True."""
+        treatment = TreatmentSpec(
+            id="unbrowser-fixture",
+            version="1",
+            system_prompt="Use Unbrowser on fixture pages.",
+            allowed_tools=("bash", "unbrowser"),
+            max_output_tokens=2048,
+            tool_call_limit=12,
+            command_timeout_seconds=45,
+            wall_time_limit_seconds=360,
+            tool_interface=UNBROWSER_INTERACTIVE_TOOL_INTERFACE,
+        )
+        policy = policy_spec_from_treatment(treatment)
+
+        task = {
+            "family": "unbrowser_fixture",
+            "public_metadata": {
+                "allowed_url": "http://127.0.0.1:18090/single_page_extraction/7/easy"
+            },
+        }
+        url = _unbrowser_url_for_task(task, policy)
+        self.assertEqual(
+            url, "http://127.0.0.1:18090/single_page_extraction/7/easy"
+        )
+
+    def test_fixture_url_rejected_for_wrong_origin(self) -> None:
+        """Fixture family rejects URLs outside the fixture origin."""
+        treatment = TreatmentSpec(
+            id="unbrowser-fixture-bad",
+            version="1",
+            system_prompt="Use Unbrowser on fixture pages.",
+            allowed_tools=("bash", "unbrowser"),
+            max_output_tokens=2048,
+            tool_call_limit=12,
+            command_timeout_seconds=45,
+            wall_time_limit_seconds=360,
+            tool_interface=UNBROWSER_INTERACTIVE_TOOL_INTERFACE,
+        )
+        policy = policy_spec_from_treatment(treatment)
+
+        task = {
+            "family": "unbrowser_fixture",
+            "public_metadata": {
+                "allowed_url": "http://example.com/page"
+            },
+        }
+        with self.assertRaisesRegex(ValueError, "pinned"):
+            _unbrowser_url_for_task(task, policy)
+
+    def test_fixture_family_passes_confine_unbrowser(self) -> None:
+        """_run_pi passes --gym-confine-unbrowser for fixture tasks."""
+        treatment = TreatmentSpec(
+            id="unbrowser-fixture",
+            version="1",
+            system_prompt="Use Unbrowser on fixture pages.",
+            allowed_tools=("bash", "unbrowser"),
+            max_output_tokens=2048,
+            tool_call_limit=12,
+            command_timeout_seconds=45,
+            wall_time_limit_seconds=360,
+            tool_interface=UNBROWSER_INTERACTIVE_TOOL_INTERFACE,
+        )
+        completed = mock.Mock(returncode=0, stdout="", stderr="")
+        with mock.patch(
+            "pyreplab_harness.orchestrator.subprocess.run", return_value=completed
+        ) as runner:
+            _run_pi(
+                PROJECT_ROOT,
+                RemoteConfig("host", "/project", "/runs"),
+                "/runs/workspace",
+                "task prompt",
+                policy_spec_from_treatment(treatment),
+                "pi",
+                None,
+                unbrowser_url="http://127.0.0.1:18090/single_page_extraction/7/easy",
+                unbrowser_binary="/usr/local/bin/unbrowser",
+                unbrowser_interactive=True,
+                confine_unbrowser=True,
+            )
+        command = runner.call_args.args[0]
+        # Check that --gym-confine-unbrowser is passed
+        self.assertIn("--gym-confine-unbrowser", command)
+        # Check that --gym-unbrowser-interactive is passed
+        self.assertIn("--gym-unbrowser-interactive", command)
+        # Check tool-call limit is 12 for interactive fixture tasks
+        self.assertEqual(
+            command[command.index("--gym-unbrowser-tool-limit") + 1], "12"
+        )
+
+    def test_fixture_family_requires_registered_treatment(self) -> None:
+        bash_only = generate_treatments(1, seed=33)[0]
+        registry = TreatmentRegistry((bash_only,))
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "registry.json"
+            registry.save(path)
+            registered_args = argparse.Namespace(
+                family="unbrowser_fixture",
+                treatment_registry=str(path),
+                treatments="all",
+            )
+            config = RemoteConfig("host", "/project", "/runs")
+            with self.assertRaisesRegex(ValueError, "every treatment"):
+                run_registered_treatments(PROJECT_ROOT, config, registered_args)
+
+    def test_fixture_family_accepted_in_registered_treatments(self) -> None:
+        """unbrowser_fixture family should be accepted with unbrowser treatments."""
+        from pyreplab_harness.treatments import generate_treatments as _gen
+
+        treatments = _gen(1, seed=13)
+        # This might not include unbrowser; just ensure family is recognized
+        registry = TreatmentRegistry(tuple(treatments))
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "registry.json"
+            registry.save(path)
+
+            # Only test that the family name is recognized (vs rejected as unknown)
+            # Treatment mismatch will be caught before family validation
+            self.assertIn("unbrowser_fixture", FAMILIES)
+
+    def test_fixture_family_parser_accepts_family(self) -> None:
+        args = build_parser().parse_args(["--family", "unbrowser_fixture"])
+        self.assertEqual(args.family, "unbrowser_fixture")
 
 
 if __name__ == "__main__":

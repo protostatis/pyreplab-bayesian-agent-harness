@@ -30,6 +30,10 @@ from .unbrowser_interactive_gym import (
     generate_unbrowser_interactive_task,
     verify_unbrowser_interactive_attempt,
 )
+from .unbrowser_fixture_gym import (
+    generate_unbrowser_fixture_task,
+    verify_unbrowser_fixture_attempt,
+)
 
 #: Canonical family names, in a stable display order.
 FAMILIES: tuple[str, ...] = (
@@ -39,6 +43,7 @@ FAMILIES: tuple[str, ...] = (
     "python_repair",
     "unbrowser",
     "unbrowser_interactive",
+    "unbrowser_fixture",
 )
 
 _REGISTRY: dict[str, dict[str, Callable[..., Any]]] = {
@@ -65,6 +70,10 @@ _REGISTRY: dict[str, dict[str, Callable[..., Any]]] = {
     "unbrowser_interactive": {
         "generate": generate_unbrowser_interactive_task,
         "verify": verify_unbrowser_interactive_attempt,
+    },
+    "unbrowser_fixture": {
+        "generate": generate_unbrowser_fixture_task,
+        "verify": verify_unbrowser_fixture_attempt,
     },
 }
 

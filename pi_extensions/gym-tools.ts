@@ -42,6 +42,7 @@ function shellQuote(s: string): string {
 const NEWLINE_OR_NUL = /[\n\0]/;
 const UNBROWSER_SMOKE_URL = "https://example.com/";
 const UNBROWSER_INTERACTIVE_ORIGIN = "https://en.wikipedia.org/";
+const FIXTURE_INTERACTIVE_ORIGIN = "http://127.0.0.1:18090/";
 
 /** Reject values that contain newlines or NUL bytes. */
 function validateNoNewlines(label: string, value: string): void {
@@ -197,6 +198,7 @@ function buildRemoteCommand(
   unbrowserBinary: string,
   unbrowserTimeout: number,
   unbrowserInteractive: boolean,
+  unbrowserConfined: boolean,
 ): string {
   let command = (
     `PYTHONPATH=${shellQuote(project + "/src")} ` +
@@ -216,6 +218,9 @@ function buildRemoteCommand(
     if (unbrowserInteractive) {
       command += ` --unbrowser-interactive`;
     }
+    if (unbrowserConfined) {
+      command += ` --confine-unbrowser`;
+    }
   }
   return command;
 }
@@ -234,11 +239,13 @@ function startWorker(
   unbrowserBinary: string,
   unbrowserTimeout: number,
   unbrowserInteractive: boolean,
+  unbrowserConfined: boolean,
 ): void {
   const remoteCmd = buildRemoteCommand(
     python, project, root, workspace,
     commandTimeout, memoryMax, tasksMax, cpuQuota,
     unbrowserUrl, unbrowserBinary, unbrowserTimeout, unbrowserInteractive,
+    unbrowserConfined,
   );
 
   child = spawn("ssh", [
@@ -411,6 +418,12 @@ export default function (pi: ExtensionAPI) {
     default: "false",
   });
 
+  pi.registerFlag("gym-confine-unbrowser", {
+    description: "Launch unbrowser inside a Bubblewrap sandbox for filesystem isolation",
+    type: "string",
+    default: "false",
+  });
+
   // ---- Runtime state ----
 
   let toolCallCount = 0;
@@ -433,11 +446,13 @@ export default function (pi: ExtensionAPI) {
     const unbrowserTimeout = parseInt((pi.getFlag("gym-unbrowser-timeout") as string) || "30", 10);
     const unbrowserToolLimit = parseInt((pi.getFlag("gym-unbrowser-tool-limit") as string) || "3", 10);
     const unbrowserInteractive = ((pi.getFlag("gym-unbrowser-interactive") as string) || "false") === "true";
+    const unbrowserConfined = ((pi.getFlag("gym-confine-unbrowser") as string) || "false") === "true";
 
     return {
       host, python, project, root, workspace, toolLimit, commandTimeout,
       memoryMax, tasksMax, cpuQuota, maxOutputTokens, unbrowserUrl,
       unbrowserBinary, unbrowserTimeout, unbrowserToolLimit, unbrowserInteractive,
+      unbrowserConfined,
     };
   }
 
@@ -474,9 +489,10 @@ export default function (pi: ExtensionAPI) {
 
     if (cfg.unbrowserUrl) {
       if (cfg.unbrowserInteractive) {
-        if (!cfg.unbrowserUrl.startsWith(UNBROWSER_INTERACTIVE_ORIGIN)) {
+        if (!cfg.unbrowserUrl.startsWith(UNBROWSER_INTERACTIVE_ORIGIN) &&
+            !cfg.unbrowserUrl.startsWith(FIXTURE_INTERACTIVE_ORIGIN)) {
           throw new Error(
-            `--gym-unbrowser-url must start with ${UNBROWSER_INTERACTIVE_ORIGIN} in interactive mode`
+            `--gym-unbrowser-url must start with ${UNBROWSER_INTERACTIVE_ORIGIN} or ${FIXTURE_INTERACTIVE_ORIGIN} in interactive mode`
           );
         }
       } else {
@@ -508,6 +524,7 @@ export default function (pi: ExtensionAPI) {
       cfg.unbrowserBinary,
       cfg.unbrowserTimeout,
       cfg.unbrowserInteractive,
+      cfg.unbrowserConfined,
     );
 
     // Startup ping to confirm the worker is alive

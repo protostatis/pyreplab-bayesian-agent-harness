@@ -23,6 +23,9 @@ from typing import Any, Mapping
 UNBROWSER_SMOKE_URL = "https://example.com/"
 UNBROWSER_INTERACTIVE_URL = "https://en.wikipedia.org/wiki/Main_Page"
 UNBROWSER_INTERACTIVE_ORIGIN = "https://en.wikipedia.org/"
+FIXTURE_PORT = 18090
+FIXTURE_URL_PREFIX = f"http://127.0.0.1:{FIXTURE_PORT}"
+FIXTURE_INTERACTIVE_ORIGIN = f"http://127.0.0.1:{FIXTURE_PORT}/"
 READ_ONLY_ACTIONS = frozenset({"navigate", "query", "text", "blockmap"})
 INTERACTIVE_ACTIONS = READ_ONLY_ACTIONS | {"click", "type", "submit"}
 MAX_SELECTOR_CHARS = 256
@@ -46,14 +49,22 @@ def validate_smoke_url(url: str) -> str:
     return url
 
 
-def validate_interactive_url(url: str) -> str:
+def validate_interactive_url(url: str, *, allow_fixture: bool = False) -> str:
     """Accept only a fixed Wikipedia URL with same-origin enforcement.
 
     The initial URL is controller-fixed to the Wikipedia main page.
     After click/submit, the final URL may change within the same origin.
+    When ``allow_fixture=True``, fixture URLs on 127.0.0.1:18090 are
+    also accepted and the origin check uses the fixture origin.
     This is explicitly NOT an SSRF defence.
     """
 
+    if allow_fixture:
+        if not url.startswith(FIXTURE_INTERACTIVE_ORIGIN):
+            raise ValueError(
+                f"unbrowser interactive fixture is pinned to {FIXTURE_INTERACTIVE_ORIGIN}; got {url!r}"
+            )
+        return url
     if not url.startswith(UNBROWSER_INTERACTIVE_ORIGIN):
         raise ValueError(
             f"unbrowser interactive is pinned to {UNBROWSER_INTERACTIVE_ORIGIN}; got {url!r}"
@@ -99,9 +110,15 @@ class UnbrowserSession:
         self.confined = bool(confined)
 
         if self.interactive:
-            self.allowed_url = validate_interactive_url(allowed_url)
+            if allowed_url.startswith(FIXTURE_URL_PREFIX):
+                self.allowed_url = validate_interactive_url(allowed_url, allow_fixture=True)
+                self._interactive_origin = FIXTURE_INTERACTIVE_ORIGIN
+            else:
+                self.allowed_url = validate_interactive_url(allowed_url)
+                self._interactive_origin = UNBROWSER_INTERACTIVE_ORIGIN
         else:
             self.allowed_url = validate_smoke_url(allowed_url)
+            self._interactive_origin = ""  # Not used in read-only mode
 
         self._process: subprocess.Popen[bytes] | None = None
         self._temporary_home: tempfile.TemporaryDirectory[str] | None = None
@@ -370,12 +387,11 @@ class UnbrowserSession:
             if status != 200 or (challenge is not None and challenge):
                 return False
             returned_url = result.get("url")
-            if not isinstance(returned_url, str) or not returned_url.startswith(
-                UNBROWSER_INTERACTIVE_ORIGIN
-            ):
+            origin = self._interactive_origin
+            if not isinstance(returned_url, str) or not returned_url.startswith(origin):
                 self._kill()
                 raise UnbrowserProtocolError(
-                    f"unbrowser left wikipedia: {returned_url!r}"
+                    f"unbrowser left the allowed origin: {returned_url!r}"
                 )
             return True
         else:
@@ -428,12 +444,11 @@ class UnbrowserSession:
             # After click/submit, the URL may change.  Enforce same-origin.
             if isinstance(result, dict):
                 returned_url = result.get("url")
-                if isinstance(returned_url, str) and not returned_url.startswith(
-                    UNBROWSER_INTERACTIVE_ORIGIN
-                ):
+                origin = self._interactive_origin
+                if isinstance(returned_url, str) and not returned_url.startswith(origin):
                     self._kill()
                     raise UnbrowserProtocolError(
-                        f"unbrowser left wikipedia: {returned_url!r}"
+                        f"unbrowser left the allowed origin: {returned_url!r}"
                     )
         elif action == "type":
             if not self._navigated:

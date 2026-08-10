@@ -9,6 +9,7 @@ import unittest
 from pathlib import Path
 
 from pyreplab_harness.unbrowser_rpc import (
+    FIXTURE_INTERACTIVE_ORIGIN,
     UNBROWSER_INTERACTIVE_ORIGIN,
     UNBROWSER_INTERACTIVE_URL,
     UNBROWSER_SMOKE_URL,
@@ -375,7 +376,7 @@ class UnbrowserInteractiveSessionTest(unittest.TestCase):
                 interactive=True,
             )
             session.execute({"action": "navigate"})
-            with self.assertRaisesRegex(UnbrowserProtocolError, "left wikipedia"):
+            with self.assertRaisesRegex(UnbrowserProtocolError, "left the allowed origin"):
                 session.execute({"action": "click", "ref": "e:bad"})
             self.assertFalse(session.started)
 
@@ -506,6 +507,89 @@ class ConfinedUnbrowserSessionTest(unittest.TestCase):
                 self.assertEqual(session.runtime_version, "test-1")
             finally:
                 session.close()
+
+
+class FixtureUrlValidationTest(unittest.TestCase):
+    """Tests for fixture URL validation in interactive unbrowser sessions."""
+
+    def test_fixture_url_validation_accepts_correct_prefix(self) -> None:
+        validate_interactive_url(
+            "http://127.0.0.1:18090/single_page_extraction/7/easy",
+            allow_fixture=True,
+        )
+        validate_interactive_url(
+            "http://127.0.0.1:18090/table_filter_sort/42/medium",
+            allow_fixture=True,
+        )
+        # Sub-pages within fixture origin are allowed.
+        validate_interactive_url(
+            "http://127.0.0.1:18090/multi_page_navigation/7/easy/page_0",
+            allow_fixture=True,
+        )
+
+    def test_fixture_url_validation_rejects_other_hosts(self) -> None:
+        with self.assertRaisesRegex(ValueError, "pinned"):
+            validate_interactive_url("http://localhost:18090/page", allow_fixture=True)
+        with self.assertRaisesRegex(ValueError, "pinned"):
+            validate_interactive_url("http://example.com:18090/page", allow_fixture=True)
+        with self.assertRaisesRegex(ValueError, "pinned"):
+            validate_interactive_url("https://127.0.0.1:18090/page", allow_fixture=True)
+        # Wrong port
+        with self.assertRaisesRegex(ValueError, "pinned"):
+            validate_interactive_url(
+                "http://127.0.0.1:18091/single_page_extraction/7/easy",
+                allow_fixture=True,
+            )
+
+    def test_fixture_url_without_allow_fixture_rejected(self) -> None:
+        """Without allow_fixture=True, fixture URLs should fail the Wikipedia check."""
+        with self.assertRaisesRegex(ValueError, "pinned"):
+            validate_interactive_url("http://127.0.0.1:18090/page")
+
+    def test_wikipedia_validation_still_works_when_allow_fixture_false(self) -> None:
+        # Wikipedia URLs still work with allow_fixture=False (default)
+        validate_interactive_url(UNBROWSER_INTERACTIVE_URL)
+        validate_interactive_url("https://en.wikipedia.org/wiki/Bayes%27_theorem")
+
+    def test_interactive_session_with_fixture_url(self) -> None:
+        """UnbrowserSession in interactive mode should accept fixture URLs."""
+        session = UnbrowserSession(
+            "/bin/true",
+            "http://127.0.0.1:18090/single_page_extraction/7/easy",
+            interactive=True,
+        )
+        self.assertTrue(session.interactive)
+        self.assertEqual(
+            session.allowed_url,
+            "http://127.0.0.1:18090/single_page_extraction/7/easy",
+        )
+
+    def test_interactive_session_with_fixture_url_unsafe_rejected(self) -> None:
+        """Fixture session rejects URLs outside the fixture origin."""
+        with self.assertRaisesRegex(ValueError, "pinned"):
+            UnbrowserSession(
+                "/bin/true",
+                "http://127.0.0.1:99999/single_page_extraction/7/easy",
+                interactive=True,
+            )
+
+    def test_fixture_origin_tracking(self) -> None:
+        """Session tracks fixture origin for same-origin enforcement."""
+        session = UnbrowserSession(
+            "/bin/true",
+            "http://127.0.0.1:18090/single_page_extraction/7/easy",
+            interactive=True,
+        )
+        self.assertEqual(session._interactive_origin, FIXTURE_INTERACTIVE_ORIGIN)
+
+    def test_wikipedia_origin_tracking(self) -> None:
+        """Session tracks wikipedia origin for same-origin enforcement."""
+        session = UnbrowserSession(
+            "/bin/true",
+            UNBROWSER_INTERACTIVE_URL,
+            interactive=True,
+        )
+        self.assertEqual(session._interactive_origin, UNBROWSER_INTERACTIVE_ORIGIN)
 
 
 if __name__ == "__main__":

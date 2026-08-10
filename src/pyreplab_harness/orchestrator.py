@@ -17,7 +17,11 @@ from typing import Any
 from .contracts import PolicySpec
 from .gym_registry import FAMILIES
 from .treatments import TreatmentRegistry, TreatmentSpec, to_policy_spec_kwargs
-from .unbrowser_rpc import validate_interactive_url, validate_smoke_url
+from .unbrowser_rpc import (
+    FIXTURE_INTERACTIVE_ORIGIN,
+    validate_interactive_url,
+    validate_smoke_url,
+)
 
 
 UNBROWSER_TOOL_INTERFACE = "native_bash_unbrowser_readonly_v1"
@@ -251,6 +255,7 @@ def _run_pi(
     unbrowser_url: str | None = None,
     unbrowser_binary: str = "/usr/local/bin/unbrowser",
     unbrowser_interactive: bool = False,
+    confine_unbrowser: bool = False,
 ) -> subprocess.CompletedProcess[str]:
     # Keep the extension outside .pi/extensions so normal Pi sessions in this
     # repository never auto-discover the restrictive gym tool configuration.
@@ -264,7 +269,10 @@ def _run_pi(
         if unbrowser_url is None:
             raise ValueError("an exact Unbrowser smoke URL is required")
         if unbrowser_interactive:
-            validate_interactive_url(unbrowser_url)
+            validate_interactive_url(
+                unbrowser_url,
+                allow_fixture=unbrowser_url.startswith(FIXTURE_INTERACTIVE_ORIGIN),
+            )
         else:
             validate_smoke_url(unbrowser_url)
         if not unbrowser_binary.startswith("/") or "\n" in unbrowser_binary:
@@ -345,6 +353,13 @@ def _run_pi(
                     "true",
                 ]
             )
+        if confine_unbrowser:
+            command.extend(
+                [
+                    "--gym-confine-unbrowser",
+                    "true",
+                ]
+            )
     command.extend(
         [
             "--append-system-prompt",
@@ -377,6 +392,7 @@ def _run_pi_checked(
     unbrowser_url: str | None = None,
     unbrowser_binary: str = "/usr/local/bin/unbrowser",
     unbrowser_interactive: bool = False,
+    confine_unbrowser: bool = False,
 ) -> subprocess.CompletedProcess[str]:
     """Run Pi, converting a wall-clock timeout into a failed run.
 
@@ -398,6 +414,7 @@ def _run_pi_checked(
             unbrowser_url,
             unbrowser_binary,
             unbrowser_interactive,
+            confine_unbrowser,
         )
     except subprocess.TimeoutExpired as error:
 
@@ -464,10 +481,10 @@ def _unbrowser_url_for_task(
     if "unbrowser" not in policy.allowed_tools:
         return None
     family = task.get("family")
-    if family not in {"unbrowser", "unbrowser_interactive"}:
+    if family not in {"unbrowser", "unbrowser_interactive", "unbrowser_fixture"}:
         raise ValueError(
-            "the Unbrowser tool is restricted to the unbrowser and "
-            "unbrowser_interactive families"
+            "the Unbrowser tool is restricted to the unbrowser, "
+            "unbrowser_interactive, and unbrowser_fixture families"
         )
     metadata = task.get("public_metadata")
     if not isinstance(metadata, dict):
@@ -476,6 +493,8 @@ def _unbrowser_url_for_task(
     if not isinstance(url, str):
         raise ValueError("Unbrowser task omitted its exact allowed_url")
 
+    if family == "unbrowser_fixture":
+        return validate_interactive_url(url, allow_fixture=True)
     if family == "unbrowser_interactive":
         return validate_interactive_url(url)
     return validate_smoke_url(url)
@@ -541,7 +560,10 @@ def _run_attempt(
         getattr(args, "thinking", "off"),
         _unbrowser_url_for_task(task, policy),
         getattr(args, "unbrowser_binary", "/usr/local/bin/unbrowser"),
-        unbrowser_interactive=(task.get("family") == "unbrowser_interactive"),
+        unbrowser_interactive=(
+            task.get("family") in {"unbrowser_interactive", "unbrowser_fixture"}
+        ),
+        confine_unbrowser=(task.get("family") == "unbrowser_fixture"),
     )
     pi_seconds = time.monotonic() - phase_started
 
@@ -629,10 +651,10 @@ def _run_attempt(
 def run_single(
     project_root: Path, config: RemoteConfig, args: argparse.Namespace
 ) -> dict[str, Any]:
-    if args.family in {"unbrowser", "unbrowser_interactive"}:
+    if args.family in {"unbrowser", "unbrowser_interactive", "unbrowser_fixture"}:
         raise ValueError(
-            "the unbrowser and unbrowser_interactive families require a "
-            "registered treatment"
+            "the unbrowser, unbrowser_interactive, and unbrowser_fixture "
+            "families require a registered treatment"
         )
     policy = policy_spec(project_root, args.policy, getattr(args, "policy_version", "1"))
     task = _task_json(config, args)
@@ -648,10 +670,10 @@ def run_pair(
     The task is generated once; the policies share it. Execution order is
     randomized deterministically from the seed.
     """
-    if args.family in {"unbrowser", "unbrowser_interactive"}:
+    if args.family in {"unbrowser", "unbrowser_interactive", "unbrowser_fixture"}:
         raise ValueError(
-            "the unbrowser and unbrowser_interactive families require "
-            "registered treatments"
+            "the unbrowser, unbrowser_interactive, and unbrowser_fixture "
+            "families require registered treatments"
         )
     policy_version = getattr(args, "policy_version", "1")
     policies = {
@@ -773,7 +795,8 @@ def run_registered_treatments(
         for reference, policy in selected.items()
     }
     family = getattr(args, "family", "artifact")
-    if family in {"unbrowser", "unbrowser_interactive"} and not all(has_unbrowser.values()):
+    unbrowser_families = {"unbrowser", "unbrowser_interactive", "unbrowser_fixture"}
+    if family in unbrowser_families and not all(has_unbrowser.values()):
         missing = sorted(
             reference for reference, enabled in has_unbrowser.items() if not enabled
         )
@@ -781,13 +804,14 @@ def run_registered_treatments(
             f"the {family} family requires the Unbrowser tool in every "
             f"treatment; missing from {missing!r}"
         )
-    if family not in {"unbrowser", "unbrowser_interactive"} and any(has_unbrowser.values()):
+    if family not in unbrowser_families and any(has_unbrowser.values()):
         enabled = sorted(
             reference for reference, value in has_unbrowser.items() if value
         )
         raise ValueError(
-            "Unbrowser treatments are restricted to the unbrowser and "
-            f"unbrowser_interactive families; present in {enabled!r}"
+            "Unbrowser treatments are restricted to the unbrowser, "
+            "unbrowser_interactive, and unbrowser_fixture families; "
+            f"present in {enabled!r}"
         )
     return _run_policy_set(
         project_root,
