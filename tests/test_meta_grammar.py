@@ -2,9 +2,17 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
+import tempfile
 import unittest
+from pathlib import Path
 
 from pyreplab_harness import meta_grammar
+from pyreplab_harness.treatments import TreatmentRegistry
+
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 
 class GrammarEnumerationTest(unittest.TestCase):
@@ -182,6 +190,166 @@ class SplitPoliciesTest(unittest.TestCase):
         subset = self.grammar[:71]
         with self.assertRaises(ValueError):
             meta_grammar.split_policies(subset, seed=42)
+
+    # --- exact balance tests for holdout sets --------------------------------
+
+    def _factor_counts(self, treatments):
+        """Return {factor: {level: count}} for a list of treatments."""
+        factors = ["planning", "observation", "verification", "recovery", "tool_cap"]
+        counts = {f: {} for f in factors}
+        for t in treatments:
+            meta = t.generator_metadata
+            for f in factors:
+                level = str(meta[f])
+                counts[f][level] = counts[f].get(level, 0) + 1
+        return counts
+
+    def test_dev_exact_balance(self) -> None:
+        """Dev must have exactly 4 per 3-level factor, 6 per 2-level factor."""
+        _, dev, _ = meta_grammar.split_policies(self.grammar, seed=42)
+        counts = self._factor_counts(dev)
+        # 3-level: planning, observation
+        for f in ("planning", "observation"):
+            for level, cnt in counts[f].items():
+                self.assertEqual(cnt, 4,
+                                 f"dev {f}={level}: count={cnt}, expected=4")
+        # 2-level: verification, recovery, tool_cap
+        for f in ("verification", "recovery", "tool_cap"):
+            for level, cnt in counts[f].items():
+                self.assertEqual(cnt, 6,
+                                 f"dev {f}={level}: count={cnt}, expected=6")
+
+    def test_final_exact_balance(self) -> None:
+        """Final must have exactly 4 per 3-level factor, 6 per 2-level factor."""
+        _, _, final = meta_grammar.split_policies(self.grammar, seed=42)
+        counts = self._factor_counts(final)
+        for f in ("planning", "observation"):
+            for level, cnt in counts[f].items():
+                self.assertEqual(cnt, 4,
+                                 f"final {f}={level}: count={cnt}, expected=4")
+        for f in ("verification", "recovery", "tool_cap"):
+            for level, cnt in counts[f].items():
+                self.assertEqual(cnt, 6,
+                                 f"final {f}={level}: count={cnt}, expected=6")
+
+    def test_balance_across_seeds(self) -> None:
+        """Exact balance should hold for multiple seeds."""
+        for seed in (0, 42, 99, 1000, 54321):
+            with self.subTest(seed=seed):
+                _, dev, final = meta_grammar.split_policies(self.grammar, seed=seed)
+                for name, subset in [("dev", dev), ("final", final)]:
+                    counts = self._factor_counts(subset)
+                    for f in ("planning", "observation"):
+                        for cnt in counts[f].values():
+                            self.assertEqual(cnt, 4,
+                                             f"seed={seed} {name} {f} unbalanced")
+                    for f in ("verification", "recovery", "tool_cap"):
+                        for cnt in counts[f].values():
+                            self.assertEqual(cnt, 6,
+                                             f"seed={seed} {name} {f} unbalanced")
+
+    def test_pairwise_coverage_within_buckets(self) -> None:
+        """Dev and final select disjoint (v,r,t) combos within each (p,o) bucket.
+
+        This is the strongest pairwise-coverage guarantee the construction
+        provides: for every planning*observation combination the two holdout
+        sets explore different verification/recovery/tool_cap levels, giving
+        diverse holdout evaluation without overlap in any bucket.
+        """
+        for seed in (42, 99):
+            _, dev, final = meta_grammar.split_policies(self.grammar, seed=seed)
+            dev_ids = {t.id for t in dev}
+            final_ids = {t.id for t in final}
+            # No treatment appears in both sets (already tested elsewhere).
+            self.assertEqual(len(dev_ids & final_ids), 0)
+
+            # For each (p,o) bucket, check dev and final use disjoint vrts.
+            planning_levels = [p[0] for p in meta_grammar._PLANNING]
+            obs_levels = [o[0] for o in meta_grammar._OBSERVATION]
+            for p_name in planning_levels:
+                for o_name in obs_levels:
+                    dev_vrts = {
+                        meta_grammar._vrt_from_treatment(t)
+                        for t in dev
+                        if str(t.generator_metadata["planning"]) == p_name
+                        and str(t.generator_metadata["observation"]) == o_name
+                    }
+                    fin_vrts = {
+                        meta_grammar._vrt_from_treatment(t)
+                        for t in final
+                        if str(t.generator_metadata["planning"]) == p_name
+                        and str(t.generator_metadata["observation"]) == o_name
+                    }
+                    self.assertEqual(
+                        len(dev_vrts & fin_vrts), 0,
+                        f"seed={seed} bucket ({p_name},{o_name}): "
+                        f"dev and final share vrts {dev_vrts & fin_vrts}"
+                    )
+                    # Sanity: each bucket has 2 dev + 2 final or 1 dev + 1 final.
+                    total_picks = len(dev_vrts) + len(fin_vrts)
+                    self.assertIn(total_picks, (2, 4),
+                                  f"seed={seed} bucket ({p_name},{o_name}): "
+                                  f"unexpected total picks {total_picks}")
+
+
+class FrozenRegistryTest(unittest.TestCase):
+    def test_manifest_is_deterministic_and_hash_protected(self) -> None:
+        treatments = meta_grammar.enumerate_unbrowser_grammar()
+        first = meta_grammar.build_policy_split_manifest(
+            treatments, 20260810, registry_file="registry.json"
+        )
+        second = meta_grammar.build_policy_split_manifest(
+            treatments, 20260810, registry_file="registry.json"
+        )
+        self.assertEqual(first, second)
+        manifest_hash = first.pop("manifest_hash")
+        canonical = json.dumps(
+            first, sort_keys=True, ensure_ascii=False, separators=(",", ":")
+        )
+        self.assertEqual(
+            manifest_hash,
+            hashlib.sha256(canonical.encode("utf-8")).hexdigest(),
+        )
+
+    def test_freeze_is_idempotent_but_refuses_different_content(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            registry_path = Path(directory) / "registry.json"
+            manifest_path = Path(directory) / "split.json"
+            first = meta_grammar.freeze_policy_registry(
+                registry_path, manifest_path, split_seed=20260810
+            )
+            second = meta_grammar.freeze_policy_registry(
+                registry_path, manifest_path, split_seed=20260810
+            )
+            self.assertEqual(first, second)
+            TreatmentRegistry.load(registry_path)
+            with self.assertRaisesRegex(FileExistsError, "refusing to overwrite"):
+                meta_grammar.freeze_policy_registry(
+                    registry_path, manifest_path, split_seed=42
+                )
+
+    def test_committed_registry_and_split_match_generator(self) -> None:
+        registry_path = PROJECT_ROOT / "policies" / "m3-unbrowser-treatments.json"
+        manifest_path = PROJECT_ROOT / "policies" / "m3-unbrowser-policy-split.json"
+        registry = TreatmentRegistry.load(registry_path)
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        expected_registry = TreatmentRegistry(
+            tuple(
+                meta_grammar.enumerate_unbrowser_grammar(
+                    version=meta_grammar._DEFAULT_POLICY_VERSION
+                )
+            )
+        )
+        expected_manifest = meta_grammar.build_policy_split_manifest(
+            list(expected_registry),
+            meta_grammar._DEFAULT_SPLIT_SEED,
+            registry_file=registry_path.name,
+        )
+        self.assertEqual(registry.registry_hash, expected_registry.registry_hash)
+        self.assertEqual(manifest, expected_manifest)
+        self.assertEqual(
+            {len(values) for values in manifest["splits"].values()}, {48, 12}
+        )
 
 
 class ExportGrammarFactorsTest(unittest.TestCase):

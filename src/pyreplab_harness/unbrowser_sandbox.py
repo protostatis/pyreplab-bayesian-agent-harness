@@ -80,7 +80,8 @@ class UnbrowserSandbox:
             "--unshare-user",
             "--unshare-pid",
             "--unshare-ipc",
-            "--unshare-mount",
+            # Bubblewrap always creates a private mount namespace; unlike the
+            # other namespaces, it has no portable --unshare-mount flag.
             "--die-with-parent",
             "--new-session",
             "--clearenv",

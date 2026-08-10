@@ -101,6 +101,10 @@ class UnbrowserFixtureGymTest(unittest.TestCase):
             )
             self.assertFalse(result.success)
             self.assertEqual(result.failure_code, "missing_output")
+            attempt_dir = Path(directory) / "attempts" / attempt.attempt_id
+            self.assertTrue((attempt_dir / "verification.json").is_file())
+            persisted_attempt = json.loads((attempt_dir / "attempt.json").read_text())
+            self.assertEqual(persisted_attempt["status"], "verified")
 
     def test_verifier_rejects_malformed_json(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -222,6 +226,21 @@ class UnbrowserFixtureGymTest(unittest.TestCase):
             self.assertIsNot(task1, task2)
             self.assertEqual(task1.id, task2.id)
             self.assertEqual(task1.to_dict(), task2.to_dict())
+
+    def test_task_role_is_frozen_and_cached_role_drift_is_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            task = generate_unbrowser_fixture_task(
+                directory,
+                7,
+                "easy",
+                "single_page_extraction",
+                task_role="T_pilot",
+            )
+            self.assertEqual(task.public_metadata["task_role"], "T_pilot")
+            with self.assertRaisesRegex(ValueError, "cached task role mismatch"):
+                generate_unbrowser_fixture_task(
+                    directory, 7, "easy", "single_page_extraction"
+                )
 
 
 if __name__ == "__main__":

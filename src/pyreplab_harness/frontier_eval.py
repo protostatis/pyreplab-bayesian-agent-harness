@@ -40,9 +40,17 @@ def compute_frontier(
             f"mismatched lengths: {len(task_predictions)} predictions vs "
             f"{len(task_outcomes)} outcomes"
         )
+    if not lambda_grid:
+        raise ValueError("lambda_grid must not be empty")
+    if 0.0 not in lambda_grid:
+        raise ValueError("lambda_grid must include 0.0")
+    if any(not math.isfinite(float(lam)) or float(lam) < 0.0 for lam in lambda_grid):
+        raise ValueError("lambda_grid values must be finite and nonnegative")
 
     n_tasks = len(task_predictions)
     n_policies = len(task_predictions[0]) if n_tasks > 0 else 0
+    if n_policies == 0:
+        raise ValueError("task panels must contain at least one policy")
 
     for i in range(n_tasks):
         if len(task_predictions[i]) != n_policies:
@@ -57,8 +65,36 @@ def compute_frontier(
         obs_s: list[float] = []
         obs_c: list[float] = []
         for j in range(n_policies):
-            obs_s.append(1.0 if task_outcomes[i][j].get("verified_success", False) else 0.0)
-            obs_c.append(float(task_outcomes[i][j].get("cost", 0.0)))
+            prediction = task_predictions[i][j]
+            outcome = task_outcomes[i][j]
+            if "success_prob" not in prediction or "cost_mean" not in prediction:
+                raise ValueError(f"task {i}, policy {j}: incomplete prediction")
+            if "verified_success" not in outcome or "cost" not in outcome:
+                raise ValueError(f"task {i}, policy {j}: incomplete observed outcome")
+
+            success_prob = float(prediction["success_prob"])
+            predicted_cost = float(prediction["cost_mean"])
+            observed_cost_value = float(outcome["cost"])
+            if not math.isfinite(success_prob) or not 0.0 <= success_prob <= 1.0:
+                raise ValueError(
+                    f"task {i}, policy {j}: success_prob must be finite and in [0, 1]"
+                )
+            if not math.isfinite(predicted_cost) or predicted_cost < 0.0:
+                raise ValueError(
+                    f"task {i}, policy {j}: cost_mean must be finite and nonnegative"
+                )
+            if not math.isfinite(observed_cost_value) or observed_cost_value < 0.0:
+                raise ValueError(
+                    f"task {i}, policy {j}: observed cost must be finite and nonnegative"
+                )
+
+            observed_success_value = outcome["verified_success"]
+            if observed_success_value not in (False, True, 0, 1):
+                raise ValueError(
+                    f"task {i}, policy {j}: verified_success must be boolean or binary"
+                )
+            obs_s.append(1.0 if observed_success_value else 0.0)
+            obs_c.append(observed_cost_value)
         observed_success.append(obs_s)
         observed_cost.append(obs_c)
 
@@ -73,7 +109,14 @@ def compute_frontier(
                 - lam * task_predictions[i][j]["cost_mean"]
                 for j in range(n_policies)
             ]
-            selected_indices.append(max(range(n_policies), key=lambda j, s=scores: (s[j], j)))
+            selected_indices.append(
+                max(
+                    range(n_policies),
+                    key=lambda j, s=scores, preds=task_predictions[i]: (
+                        s[j], -float(preds[j]["cost_mean"]), -j,
+                    ),
+                )
+            )
 
         # Score against observed outcomes.
         success_obs = [observed_success[i][selected_indices[i]] for i in range(n_tasks)]
@@ -87,21 +130,28 @@ def compute_frontier(
         })
 
     # Frontier area: area under observed success vs log(cost) curve.
+    max_observed_cost = max(max(task_costs) for task_costs in observed_cost)
     frontier_area = _compute_frontier_area(
-        observed_success, observed_cost, selected_by_lambda=lambda_results,
+        observed_success,
+        observed_cost,
+        selected_by_lambda=lambda_results,
+        max_cost=max_observed_cost,
     )
 
     # Pure-success (lambda=0) result.
-    lambda0 = next((r for r in lambda_results if r["lambda"] == 0.0), lambda_results[0])
+    lambda0 = next(r for r in lambda_results if r["lambda"] == 0.0)
 
     # Oracle frontier (best possible per task).
-    oracle = _compute_oracle_frontier(observed_success, observed_cost)
+    oracle = _compute_oracle_frontier(
+        observed_success, observed_cost, lambda_grid, max_cost=max_observed_cost,
+    )
 
     return {
         "n_tasks": n_tasks,
         "n_policies": n_policies,
         "lambda_grid": lambda_grid,
         "lambda_results": lambda_results,
+        "frontier_points": _operating_frontier_points(lambda_results),
         "frontier_area": frontier_area,
         "pure_success_rate": lambda0["selected_success"],
         "pure_success_mean_cost": lambda0["mean_cost"],
@@ -115,35 +165,32 @@ def _compute_frontier_area(
     observed_success: list[list[float]],
     observed_cost: list[list[float]],
     selected_by_lambda: list[dict[str, Any]],
+    *,
+    max_cost: float | None = None,
 ) -> float:
     """Compute area under the success-vs-log(1+cost) frontier curve.
 
-    Uses the nondominated set of (cost, success) points across all lambda
-    selections and all policies.
+    Only aggregate allocator operating points selected by the frozen lambda
+    grid belong on this frontier. Individual task-policy cells are not
+    comparable to aggregate operating points and are used only to establish a
+    common observed-cost upper bound.
     """
-    n_tasks = len(observed_success)
-    if n_tasks == 0:
+    if not selected_by_lambda:
         return 0.0
 
-    n_policies = len(observed_success[0]) if n_tasks > 0 else 0
-
-    # Collect all (cost, success) points from all policies aggregated.
-    points: list[tuple[float, float]] = []
-    for i in range(n_tasks):
-        for j in range(n_policies):
-            points.append((observed_cost[i][j], observed_success[i][j]))
-
-    # Also add the lambda-selected aggregated points.
-    for result in selected_by_lambda:
-        points.append((result["mean_cost"], result["selected_success"]))
-
-    # Find nondominated (Pareto) frontier: maximize success, minimize cost.
-    nondominated = _pareto_frontier(points)
+    nondominated = _operating_frontier_points(selected_by_lambda)
     if not nondominated:
         return 0.0
 
-    # Area under the piecewise-linear curve of success vs log(1+cost).
-    nondominated.sort(key=lambda p: math.log1p(p[0]))
+    if max_cost is None:
+        max_cost = max(
+            (cost for task_costs in observed_cost for cost in task_costs),
+            default=max(point[0] for point in nondominated),
+        )
+    max_cost = max(float(max_cost), nondominated[-1][0])
+
+    # Integrate the piecewise-linear frontier and extend its last attained
+    # success horizontally to the common observed-cost upper bound.
     area = 0.0
     for idx in range(1, len(nondominated)):
         x0 = math.log1p(nondominated[idx - 1][0])
@@ -151,7 +198,20 @@ def _compute_frontier_area(
         y0 = nondominated[idx - 1][1]
         y1 = nondominated[idx][1]
         area += (y0 + y1) * (x1 - x0) / 2.0
+    last_cost, last_success = nondominated[-1]
+    area += last_success * (math.log1p(max_cost) - math.log1p(last_cost))
     return area
+
+
+def _operating_frontier_points(
+    selected_by_lambda: list[dict[str, Any]],
+) -> list[tuple[float, float]]:
+    """Return sorted nondominated aggregate allocator operating points."""
+    points = [
+        (float(result["mean_cost"]), float(result["selected_success"]))
+        for result in selected_by_lambda
+    ]
+    return sorted(_pareto_frontier(points), key=lambda point: point[0])
 
 
 def _pareto_frontier(
@@ -159,19 +219,20 @@ def _pareto_frontier(
 ) -> list[tuple[float, float]]:
     """Return the nondominated (Pareto) frontier: maximize success, minimize cost.
 
-    A point (c1, s1) dominates (c2, s2) if s1 >= s2 AND c1 <= c2, with at
-    least one strict.
+    Points are (cost, success) tuples.  A point (c1, s1) dominates (c2, s2)
+    if s1 >= s2 AND c1 <= c2, with at least one strict; that is, equal or
+    better success at equal or lower cost.
     """
     if not points:
         return []
-    points = list(set(points))  # dedupe
+    points = sorted(set(points))
     dominated = [False] * len(points)
     for i in range(len(points)):
+        ci, si = points[i]  # (cost, success)
         for j in range(len(points)):
             if i == j or dominated[j]:
                 continue
-            si, ci = points[i]
-            sj, cj = points[j]
+            cj, sj = points[j]
             if si >= sj and ci <= cj and (si > sj or ci < cj):
                 dominated[j] = True
     return [p for i, p in enumerate(points) if not dominated[i]]
@@ -180,6 +241,9 @@ def _pareto_frontier(
 def _compute_oracle_frontier(
     observed_success: list[list[float]],
     observed_cost: list[list[float]],
+    lambda_grid: list[float],
+    *,
+    max_cost: float,
 ) -> dict[str, Any]:
     """Compute the oracle (upper-bound) frontier using realized outcomes.
 
@@ -189,20 +253,47 @@ def _compute_oracle_frontier(
     if n_tasks == 0:
         return {"area": 0.0, "pure_success": 0.0}
 
-    # Collect all points for area.
-    points: list[tuple[float, float]] = []
-    for i in range(n_tasks):
-        for j in range(len(observed_success[i])):
-            points.append((observed_cost[i][j], observed_success[i][j]))
+    lambda_results: list[dict[str, Any]] = []
+    for lam in lambda_grid:
+        selected_indices = [
+            max(
+                range(len(observed_success[i])),
+                key=lambda j, task=i: (
+                    observed_success[task][j] - lam * observed_cost[task][j],
+                    -observed_cost[task][j],
+                    -j,
+                ),
+            )
+            for i in range(n_tasks)
+        ]
+        lambda_results.append({
+            "lambda": lam,
+            "selected_success": sum(
+                observed_success[i][selected_indices[i]] for i in range(n_tasks)
+            ) / n_tasks,
+            "mean_cost": sum(
+                observed_cost[i][selected_indices[i]] for i in range(n_tasks)
+            ) / n_tasks,
+            "selected_indices": selected_indices,
+        })
 
-    area = _compute_frontier_area(observed_success, observed_cost, [])
+    area = _compute_frontier_area(
+        observed_success,
+        observed_cost,
+        lambda_results,
+        max_cost=max_cost,
+    )
 
     # Pure success (lambda=0): best possible success per task.
     pure_success = sum(
         max(observed_success[i]) for i in range(n_tasks)
     ) / n_tasks
 
-    return {"area": area, "pure_success": pure_success}
+    return {
+        "area": area,
+        "pure_success": pure_success,
+        "lambda_results": lambda_results,
+    }
 
 
 # ---------------------------------------------------------------------------

@@ -201,13 +201,17 @@ class FixtureTemplatesTest(unittest.TestCase, HtmlWellFormedTestMixin):
         # stateful_workflow: nonce is on the final success step
         if template == "stateful_workflow":
             correct_path = oracle.get("correct_path", [])
+            state_tokens = oracle.get("state_tokens", [])
             num_steps = oracle.get("num_steps", 3)
-            if correct_path:
+            if correct_path and len(state_tokens) == num_steps:
                 last_step = num_steps - 1
                 return generate_page(
                     template, seed, difficulty,
                     page=f"step/{last_step}",
-                    query_params={"choice": str(correct_path[-1])},
+                    query_params={
+                        "choice": str(correct_path[-1]),
+                        "state": str(state_tokens[-1]),
+                    },
                 )
             return None
 
@@ -351,12 +355,52 @@ class FixtureTemplatesTest(unittest.TestCase, HtmlWellFormedTestMixin):
     def test_template_7_stateful_workflow(self) -> None:
         page = generate_page("stateful_workflow", 42, "medium")
         self._has_links(page.html)
-        # Step page
+        # A later step cannot be opened without prior-state proof.
         step = generate_page(
             "stateful_workflow", 42, "medium",
             page="step/0", query_params={"choice": "0"},
         )
-        self.assertIsInstance(step, FixturePage)
+        self.assertIn("Workflow State Error", step.html)
+        self.assertNotIn(page.nonce, step.html)
+
+    def test_stateful_workflow_requires_correct_order(self) -> None:
+        page = generate_page("stateful_workflow", 42, "medium")
+        correct_path = page.oracle["correct_path"]
+        state_tokens = page.oracle["state_tokens"]
+        for step_num, choice in enumerate(correct_path):
+            result = generate_page(
+                "stateful_workflow",
+                42,
+                "medium",
+                page=f"step/{step_num}",
+                query_params={
+                    "choice": str(choice),
+                    "state": state_tokens[step_num],
+                },
+            )
+        self.assertIn(page.nonce, result.html)
+
+    def test_semantic_templates_do_not_repeat_nonce_as_generic_footer(self) -> None:
+        for template in ("single_page_extraction", "table_filter_sort"):
+            page = generate_page(template, 42, "medium")
+            self.assertEqual(page.html.count(page.nonce), 1, template)
+
+        search = generate_page("search_filter_controls", 42, "medium")
+        wrong_results = generate_page(
+            "search_filter_controls",
+            42,
+            "medium",
+            query_params={"q": "not-the-target-category"},
+        )
+        self.assertNotIn(search.nonce, wrong_results.html)
+
+        comparison = generate_page("cross_page_comparison", 42, "medium")
+        for index in range(comparison.oracle["num_pages"]):
+            branch = generate_page(
+                "cross_page_comparison", 42, "medium", page=f"page_{index}"
+            )
+            self.assertNotIn("Top Performer", branch.html)
+            self.assertEqual(branch.html.count("BRANCH VERIFICATION KEY:"), 1)
 
     def test_template_8_distractor_recovery(self) -> None:
         page = generate_page("distractor_recovery", 42, "medium")

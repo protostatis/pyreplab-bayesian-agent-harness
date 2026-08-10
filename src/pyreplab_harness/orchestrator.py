@@ -16,6 +16,7 @@ from typing import Any
 
 from .contracts import PolicySpec
 from .gym_registry import FAMILIES
+from .fixture_templates import TEMPLATES as _FIXTURE_TEMPLATES
 from .treatments import TreatmentRegistry, TreatmentSpec, to_policy_spec_kwargs
 from .unbrowser_rpc import (
     FIXTURE_INTERACTIVE_ORIGIN,
@@ -26,6 +27,16 @@ from .unbrowser_rpc import (
 
 UNBROWSER_TOOL_INTERFACE = "native_bash_unbrowser_readonly_v1"
 UNBROWSER_INTERACTIVE_TOOL_INTERFACE = "native_bash_unbrowser_interactive_v1"
+PINNED_SAMPLING_PARAMETERS: dict[str, int | float] = {
+    "temperature": 0.8,
+    "top_p": 0.95,
+    "top_k": 40,
+    "min_p": 0.05,
+    "repeat_penalty": 1.0,
+    "presence_penalty": 0.0,
+    "frequency_penalty": 0.0,
+}
+_SAMPLING_RECEIPT_PREFIX = "PYREPLAB_SAMPLING_V1 "
 
 
 @dataclass(frozen=True)
@@ -256,6 +267,7 @@ def _run_pi(
     unbrowser_binary: str = "/usr/local/bin/unbrowser",
     unbrowser_interactive: bool = False,
     confine_unbrowser: bool = False,
+    sampling_seed: int | None = None,
 ) -> subprocess.CompletedProcess[str]:
     # Keep the extension outside .pi/extensions so normal Pi sessions in this
     # repository never auto-discover the restrictive gym tool configuration.
@@ -279,6 +291,13 @@ def _run_pi(
             raise ValueError("unbrowser binary must be an absolute remote path")
     elif unbrowser_url is not None:
         raise ValueError("Unbrowser URL supplied to a treatment without the tool")
+    if sampling_seed is not None and (
+        isinstance(sampling_seed, bool)
+        or not isinstance(sampling_seed, int)
+        or sampling_seed < 0
+        or sampling_seed > 2_147_483_647
+    ):
+        raise ValueError("sampling_seed must be an integer in [0, 2147483647]")
 
     command = [
         pi_executable,
@@ -332,6 +351,8 @@ def _run_pi(
             str(policy.max_output_tokens),
         ]
     )
+    if sampling_seed is not None:
+        command.extend(["--gym-sampling-seed", str(sampling_seed)])
     if unbrowser_url is not None:
         unbrowser_tool_limit = 12 if unbrowser_interactive else 3
         command.extend(
@@ -393,6 +414,7 @@ def _run_pi_checked(
     unbrowser_binary: str = "/usr/local/bin/unbrowser",
     unbrowser_interactive: bool = False,
     confine_unbrowser: bool = False,
+    sampling_seed: int | None = None,
 ) -> subprocess.CompletedProcess[str]:
     """Run Pi, converting a wall-clock timeout into a failed run.
 
@@ -415,6 +437,7 @@ def _run_pi_checked(
             unbrowser_binary,
             unbrowser_interactive,
             confine_unbrowser,
+            sampling_seed,
         )
     except subprocess.TimeoutExpired as error:
 
@@ -432,6 +455,18 @@ def _run_pi_checked(
             stderr=_text(error.stderr)
             or f"pi process timed out after {policy.wall_time_limit_seconds}s",
         )
+
+
+def _parse_sampling_receipt(stderr: str) -> dict[str, Any] | None:
+    for line in reversed(stderr.splitlines()):
+        if not line.startswith(_SAMPLING_RECEIPT_PREFIX):
+            continue
+        try:
+            value = json.loads(line[len(_SAMPLING_RECEIPT_PREFIX) :])
+        except json.JSONDecodeError:
+            return None
+        return value if isinstance(value, dict) else None
+    return None
 
 
 def _attempt_event_summary(config: RemoteConfig, attempt_id: str) -> dict[str, Any] | None:
@@ -457,20 +492,24 @@ def _pair_order(seed: int | str, policies: Sequence[str]) -> list[str]:
 
 
 def _task_json(config: RemoteConfig, args: argparse.Namespace) -> dict[str, Any]:
-    return remote_json(
-        config,
-        [
-            "generate",
-            "--family",
-            args.family,
-            "--root",
-            config.run_root,
-            "--seed",
-            str(args.seed),
-            "--difficulty",
-            args.difficulty,
-        ],
-    )
+    arguments = [
+        "generate",
+        "--family",
+        args.family,
+        "--root",
+        config.run_root,
+        "--seed",
+        str(args.seed),
+        "--difficulty",
+        args.difficulty,
+    ]
+    if args.family == "unbrowser_fixture":
+        fixture_template = getattr(args, "fixture_template", "single_page_extraction")
+        arguments.extend(["--fixture-template", fixture_template])
+        task_role = getattr(args, "task_role", None)
+        if task_role is not None:
+            arguments.extend(["--task-role", str(task_role)])
+    return remote_json(config, arguments)
 
 
 def _unbrowser_url_for_task(
@@ -535,6 +574,20 @@ def _run_attempt(
         prepare_arguments.extend(
             ["--treatment-registry-hash", registry_hash]
         )
+    rollout_replica = getattr(args, "rollout_replica", None)
+    if rollout_replica is not None:
+        prepare_arguments.extend(["--rollout-replica", str(rollout_replica)])
+    sampling_seed = getattr(args, "sampling_seed", None)
+    if sampling_seed is not None:
+        prepare_arguments.extend(["--sampling-seed", str(sampling_seed)])
+    pilot_manifest_hash = getattr(args, "pilot_manifest_hash", None)
+    if pilot_manifest_hash is not None:
+        prepare_arguments.extend(
+            ["--pilot-manifest-hash", str(pilot_manifest_hash)]
+        )
+    pilot_panel_id = getattr(args, "pilot_panel_id", None)
+    if pilot_panel_id is not None:
+        prepare_arguments.extend(["--pilot-panel-id", str(pilot_panel_id)])
     attempt = remote_json(config, prepare_arguments)
     prepare_seconds = time.monotonic() - phase_started
 
@@ -564,18 +617,17 @@ def _run_attempt(
             task.get("family") in {"unbrowser_interactive", "unbrowser_fixture"}
         ),
         confine_unbrowser=(task.get("family") == "unbrowser_fixture"),
+        sampling_seed=sampling_seed,
     )
     pi_seconds = time.monotonic() - phase_started
 
-    record_seconds = 0.0
-    if completed.stdout.strip():
-        phase_started = time.monotonic()
-        remote_json(
-            config,
-            ["record-events", "--root", config.run_root, "--attempt-id", attempt_id],
-            input_text=completed.stdout,
-        )
-        record_seconds = time.monotonic() - phase_started
+    phase_started = time.monotonic()
+    remote_json(
+        config,
+        ["record-events", "--root", config.run_root, "--attempt-id", attempt_id],
+        input_text=completed.stdout,
+    )
+    record_seconds = time.monotonic() - phase_started
     # Verification always runs, even when Pi failed, so the final workspace is
     # inspected and reported; a failed verification never suppresses the report.
     phase_started = time.monotonic()
@@ -600,6 +652,7 @@ def _run_attempt(
         "policy": policy.to_dict(),
         "pi_return_code": completed.returncode,
         "pi_stderr": completed.stderr[-4000:],
+        "sampling_receipt": _parse_sampling_receipt(completed.stderr),
         "verification": verification,
     }
     usage_seconds = 0.0
@@ -624,6 +677,9 @@ def _run_attempt(
                     {
                         "tool_name": execution.get("tool_name"),
                         "is_error": execution.get("is_error", False),
+                        "budget_rejected": execution.get(
+                            "budget_rejected", False
+                        ),
                         "details": details if isinstance(details, dict) else None,
                     }
                 )
@@ -635,6 +691,7 @@ def _run_attempt(
                 ),
                 "length_stop_count": event_summary.get("length_stop_count"),
                 "stop_reasons": event_summary.get("stop_reasons"),
+                "planning_preamble": event_summary.get("planning_preamble"),
                 "tool_trace": tool_trace,
             }
     result["timing"] = {
@@ -698,10 +755,13 @@ def _run_policy_set(
         raise ValueError("at least one policy treatment is required")
     task = _task_json(config, args)
     policy_versions = {policy.version for policy in policies.values()}
-    order_key: int | str = (
-        task["id"] if policy_versions != {"1"} or mode != "pair" else args.seed
-    )
-    execution_order = _pair_order(order_key, list(policies))
+    if getattr(args, "preserve_treatment_order", False):
+        execution_order = list(policies)
+    else:
+        order_key: int | str = (
+            task["id"] if policy_versions != {"1"} or mode != "pair" else args.seed
+        )
+        execution_order = _pair_order(order_key, list(policies))
     attempts: list[tuple[str, dict[str, Any]]] = []
     for treatment_ref in execution_order:
         policy = policies[treatment_ref]
@@ -732,6 +792,7 @@ def _run_policy_set(
                 "policy": attempt["policy"],
                 "pi_return_code": attempt["pi_return_code"],
                 "pi_stderr": attempt["pi_stderr"],
+                "sampling_receipt": attempt.get("sampling_receipt"),
                 "verification": attempt["verification"],
                 "usage": attempt.get("usage"),
                 "trajectory": attempt.get("trajectory"),
@@ -742,6 +803,15 @@ def _run_policy_set(
     }
     if registry_hash is not None:
         result["treatment_registry_hash"] = registry_hash
+    for field in (
+        "rollout_replica",
+        "sampling_seed",
+        "pilot_manifest_hash",
+        "pilot_panel_id",
+    ):
+        value = getattr(args, field, None)
+        if value is not None:
+            result[field] = value
     return result
 
 
@@ -877,7 +947,8 @@ def build_parser() -> argparse.ArgumentParser:
         default=os.environ.get(
             "PYREPLAB_REMOTE_UNBROWSER", "/usr/local/bin/unbrowser"
         ),
-        help="absolute Unbrowser binary path on the disposable remote runner",
+        help="absolute Unbrowser binary path on the disposable remote runner "
+        "(filesystem confinement isolates the process, not URL/network)",
     )
     parser.add_argument("--pi", default=os.environ.get("PYREPLAB_PI", "pi"))
     parser.add_argument(
@@ -916,7 +987,24 @@ def build_parser() -> argparse.ArgumentParser:
         "--seed",
     )
     parser.add_argument("--seed", type=int, default=7)
+    parser.add_argument(
+        "--sampling-seed",
+        type=int,
+        default=None,
+        help="optional deterministic provider sampling seed",
+    )
     parser.add_argument("--difficulty", choices=["easy", "medium", "hard"], default="medium")
+    parser.add_argument(
+        "--fixture-template",
+        choices=_FIXTURE_TEMPLATES,
+        default="single_page_extraction",
+        help="fixture page template (only used when --family is unbrowser_fixture)",
+    )
+    parser.add_argument(
+        "--task-role",
+        default=None,
+        help="frozen task role such as T_canary (unbrowser_fixture only)",
+    )
     parser.add_argument("--attempt-id")
     parser.add_argument(
         "--treatment-registry",

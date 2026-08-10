@@ -11,11 +11,12 @@ Architecture (from M3 preregistration Section 8.1):
         -> 2-layer MLP -> h_p (64 dim)
 
     Context element encoder (per calibration row):
-        phi(h_x_i, h_p, y_i, onehot(term_i), log(1+cost_i), mask_i) -> e_i
+        phi(h_x_i, h_p, y_i, onehot(term_i), zlogcost_i, mask_i) -> e_i
         2-layer MLP (256->128)
 
     Global DeepSets summary:
-        r_global = rho(h_p, mean(e_i), variance(e_i), log(1+k))
+        r_global = rho(h_p, mean(e_i), variance(e_i), outcome moments,
+                       log(1+k))
 
     Target-conditioned attention:
         r_local = Attention(q=h_x_target, k=h_x_i, v=e_i)
@@ -24,7 +25,7 @@ Architecture (from M3 preregistration Section 8.1):
         input: [h_x_target, h_p, r_global, r_local, h_x_target * h_p]
         -> MLP (256->128) with dropout
         -> three heads:
-            success:     Bernoulli logit
+            success:     bounded context residual around a descriptor prior
             cost:        log-normal (mu_c, log_sigma_c)
             termination: categorical logits (6 classes, auxiliary)
 
@@ -176,7 +177,7 @@ class PolicyDescriptorEncoder(_Module):
 class ContextElementEncoder(_Module):
     """Encode one calibration row into context element e_i.
 
-    phi(h_x_i, h_p, y_i, onehot(term_i), log(1+cost_i), mask_i) -> e_i
+    phi(h_x_i, h_p, y_i, onehot(term_i), zlogcost_i, mask_i) -> e_i
     """
 
     def __init__(
@@ -188,7 +189,7 @@ class ContextElementEncoder(_Module):
     ) -> None:
         super().__init__()
         # Input: h_x_i (96) + h_p (64) + success (1) + termination one-hot (6) +
-        #        log(1+cost) (1) + mask (1) = 169
+        #        standardized log1p(cost) (1) + mask (1) = 169
         input_dim = hx_dim + hp_dim + 1 + _NUM_TERMINATION_CLASSES + 1 + 1
         self.net = nn.Sequential(
             nn.Linear(input_dim, hidden_dim),
@@ -212,7 +213,7 @@ class ContextElementEncoder(_Module):
             hp: (B, hp_dim) policy descriptor (same for context rows of same policy)
             success: (B, 1) binary success
             termination_onehot: (B, 6) one-hot termination class
-            log_cost: (B, 1) log(1 + cost)
+            log_cost: (B, 1) meta-train-standardized log1p(cost)
             mask: (B, 1) validity mask (1 = valid, 0 = padding)
         Returns:
             e_i: (B, output_dim)
@@ -269,11 +270,18 @@ class MultiheadAttention(_Module):
         v = self.v_proj(values).view(B, K, self.num_heads, self.head_dim).transpose(1, 2)  # (B, H, K, D)
 
         attn = (q @ k.transpose(-2, -1)) * self.scale  # (B, H, 1, K)
+        has_valid_context = None
         if mask is not None:
             # mask: (B, K, 1) -> (B, 1, 1, K)
             mask = mask.squeeze(-1).unsqueeze(1).unsqueeze(1)  # (B, 1, 1, K)
+            has_valid_context = mask.any(dim=-1, keepdim=True)
             attn = attn.masked_fill(mask == 0, float("-inf"))
+            # Softmax over an all-masked row is undefined. Empty rows are
+            # replaced with learned vectors by MetaCNPModel.forward().
+            attn = torch.where(has_valid_context, attn, torch.zeros_like(attn))
         attn = F.softmax(attn, dim=-1)
+        if has_valid_context is not None:
+            attn = attn * has_valid_context
         out = attn @ v  # (B, H, 1, D)
         out = out.transpose(1, 2).contiguous().view(B, -1)  # (B, output_dim)
         return self.out_proj(out)
@@ -376,8 +384,13 @@ class MetaCNPModel(_Module):
             output_dim=ei_dim,
         )
 
-        # r_global input: h_p (hp_dim) + mean(e_i) (ei_dim) + var(e_i) (ei_dim) + log(1+k) (1)
-        r_global_input_dim = hp_dim + ei_dim + ei_dim + 1
+        # r_global input: policy descriptor, learned element moments, explicit
+        # outcome moments, and log(1+k). The explicit moments make the global
+        # random-intercept signal available without requiring the element MLP
+        # to rediscover simple sufficient statistics.
+        r_global_input_dim = (
+            hp_dim + ei_dim + ei_dim + 1 + 1 + _NUM_TERMINATION_CLASSES + 1
+        )
         self.r_global_net = nn.Sequential(
             nn.Linear(r_global_input_dim, context_hidden),
             nn.ReLU(),
@@ -387,6 +400,22 @@ class MetaCNPModel(_Module):
         # Learned empty-context vectors for k=0
         self.empty_r_global = nn.Parameter(torch.zeros(ei_dim))
         self.empty_r_local = nn.Parameter(torch.zeros(ei_dim))
+
+        # Project the policy representation to the task latent dimension before
+        # forming the element-wise interaction.
+        self.hp_to_hx_proj = nn.Linear(hp_dim, hx_dim, bias=False)
+
+        # Descriptor-only prior for success. Non-empty contexts update this
+        # prior through a shrinkage path in forward(); the attentive decoder
+        # contributes only a bounded task-specific residual.
+        success_prior_input_dim = hx_dim + hp_dim + hx_dim
+        self.success_prior_net = nn.Sequential(
+            nn.Linear(success_prior_input_dim, decoder_hidden),
+            nn.ReLU(),
+            nn.Dropout(dropout),
+            nn.Linear(decoder_hidden, 1),
+        )
+        self.calibration_strength_logit = nn.Parameter(torch.tensor(1.3862944))
 
         # Decoder input: h_x_target + h_p + r_global + r_local + h_x_target * h_p
         decoder_input_dim = hx_dim + hp_dim + ei_dim + ei_dim + hx_dim
@@ -467,7 +496,7 @@ class MetaCNPModel(_Module):
             context_text_emb: (B, K, text_embed_dim)
             context_success: (B, K, 1) binary success
             context_term_onehot: (B, K, 6) termination one-hot
-            context_cost: (B, K, 1) raw cost values
+        context_cost: (B, K, 1) meta-train-standardized log1p cost values
             context_mask: (B, K, 1) validity mask
 
         Returns:
@@ -488,31 +517,47 @@ class MetaCNPModel(_Module):
             context_text_emb.reshape(B * K, -1),
         ).reshape(B, K, self.hx_dim)
 
-        # Preprocess cost: log(1 + cost).
-        context_log_cost = torch.log1p(context_cost.clamp(min=0.0))
-
         # Encode context elements.
         e_i = self._encode_context(
             context_hx, hp,
             context_success, context_term_onehot,
-            context_log_cost, context_mask,
+            context_cost, context_mask,
         )  # (B, K, ei_dim)
 
         # Global DeepSets summary.
         # Mean of valid elements.
         e_sum = (e_i * context_mask).sum(dim=1)  # (B, ei_dim)
-        valid_count = context_mask.sum(dim=1).clamp(min=1.0)  # (B, 1)
-        e_mean = e_sum / valid_count  # (B, ei_dim)
+        valid_count_raw = context_mask.sum(dim=1)  # (B, 1) -- unclamped
+        valid_count_safe = valid_count_raw.clamp(min=1.0)  # (B, 1)
+        e_mean = e_sum / valid_count_safe  # (B, ei_dim)
 
         # Variance of valid elements.
-        e_var = ((e_i - e_mean.unsqueeze(1)) ** 2 * context_mask).sum(dim=1) / valid_count  # (B, ei_dim)
+        e_var = ((e_i - e_mean.unsqueeze(1)) ** 2 * context_mask).sum(dim=1) / valid_count_safe  # (B, ei_dim)
 
-        # log(1+k) feature.
-        k_val = valid_count.squeeze(-1)  # (B,)
+        # log(1+k) feature -- use actual k (unclamped).
+        k_val = valid_count_raw.squeeze(-1)  # (B,)
         log1pk = torch.log1p(k_val).unsqueeze(-1)  # (B, 1)
 
+        context_success_mean = (
+            context_success * context_mask
+        ).sum(dim=1) / valid_count_safe
+        context_cost_mean = (
+            context_cost * context_mask
+        ).sum(dim=1) / valid_count_safe
+        context_term_mean = (
+            context_term_onehot * context_mask
+        ).sum(dim=1) / valid_count_safe
+
         r_global = self.r_global_net(
-            torch.cat([hp, e_mean, e_var, log1pk], dim=-1)
+            torch.cat([
+                hp,
+                e_mean,
+                e_var,
+                context_success_mean,
+                context_cost_mean,
+                context_term_mean,
+                log1pk,
+            ], dim=-1)
         )  # (B, ei_dim)
 
         # Target-conditioned attention for local summary.
@@ -524,17 +569,39 @@ class MetaCNPModel(_Module):
         )  # (B, ei_dim)
 
         # For k=0 (all context_mask zero), use learned empty-context vectors.
-        is_empty = (valid_count.squeeze(-1) < 1.0)  # (B,)
+        is_empty = (k_val < 1.0)  # (B,) -- unclamped check
         if is_empty.any():
             empty_mask = is_empty.view(-1, 1)
             r_global = torch.where(empty_mask, self.empty_r_global.unsqueeze(0).expand(B, -1), r_global)
             r_local = torch.where(empty_mask, self.empty_r_local.unsqueeze(0).expand(B, -1), r_local)
 
-        # Decoder input.
-        interaction = hx_target * hp  # (B, hx_dim)
+        # Decoder input: project hp to hx_dim for element-wise interaction.
+        interaction = hx_target * self.hp_to_hx_proj(hp)  # (B, hx_dim)
         decoder_input = torch.cat([hx_target, hp, r_global, r_local, interaction], dim=-1)
 
         outputs = self.decoder(decoder_input)
+
+        prior_logit = self.success_prior_net(
+            torch.cat([hx_target, hp, interaction], dim=-1)
+        ).squeeze(-1)
+        success_count = (context_success * context_mask).sum(dim=1).squeeze(-1)
+        prior_count = 2.0
+        smoothed_success = (
+            success_count + prior_count
+        ) / (k_val + 2.0 * prior_count)
+        context_evidence_logit = torch.logit(
+            smoothed_success.clamp(min=_EPS, max=1.0 - _EPS)
+        )
+        shrinkage = k_val / (k_val + 4.0)
+        calibration_strength = torch.sigmoid(self.calibration_strength_logit)
+        attentive_residual = 0.1 * torch.tanh(outputs["logit_success"])
+        has_context = (k_val > 0.0).to(prior_logit.dtype)
+        outputs["logit_success"] = prior_logit + has_context * (
+            calibration_strength
+            * shrinkage
+            * (context_evidence_logit - prior_logit)
+            + attentive_residual
+        )
         return outputs
 
     def predict(
@@ -575,12 +642,31 @@ class MetaCNPModel(_Module):
             context_mask = torch.zeros(1, K, 1, device=device)
         else:
             K = calibration_context["success"].shape[0]
-            context_structured = calibration_context["structured"].unsqueeze(0)  # (1, K, D)
-            context_text_emb = calibration_context["text_emb"].unsqueeze(0)
-            context_success = calibration_context["success"].unsqueeze(0)         # (1, K, 1)
-            context_term = calibration_context["term_onehot"].unsqueeze(0)        # (1, K, 6)
-            context_cost = calibration_context["cost"].unsqueeze(0)               # (1, K, 1)
-            context_mask = calibration_context["mask"].unsqueeze(0)               # (1, K, 1)
+            context_structured = calibration_context["structured"].unsqueeze(0)  # (K,D) -> (1,K,D)
+            context_text_emb = calibration_context["text_emb"].unsqueeze(0)       # (K,D) -> (1,K,D)
+            context_term = calibration_context["term_onehot"].unsqueeze(0)        # (K,6) -> (1,K,6)
+
+            # Normalize scalar fields: accept (K,) or (K,1), produce (1,K,1).
+            def _to_batch_k_1(name: str, t: torch.Tensor) -> torch.Tensor:
+                if t.ndim == 1:
+                    normalized = t.unsqueeze(-1)
+                elif t.ndim == 2 and t.shape[1] == 1:
+                    normalized = t
+                else:
+                    raise ValueError(
+                        f"calibration_context[{name!r}] must have shape (K,) "
+                        f"or (K, 1); got {tuple(t.shape)}"
+                    )
+                if normalized.shape[0] != K:
+                    raise ValueError(
+                        f"calibration_context[{name!r}] has K={normalized.shape[0]}, "
+                        f"expected {K}"
+                    )
+                return normalized.unsqueeze(0)
+
+            context_success = _to_batch_k_1("success", calibration_context["success"])
+            context_cost = _to_batch_k_1("cost", calibration_context["cost"])
+            context_mask = _to_batch_k_1("mask", calibration_context["mask"])
 
         with torch.no_grad():
             outputs = self.forward(
@@ -595,8 +681,16 @@ class MetaCNPModel(_Module):
         sigma_log = F.softplus(torch.tensor(log_sigma)).item()
 
         # Cost expectation: E[C] = exp(mu + sigma^2/2) - 1
-        cost_mean = math.exp(mu_log + sigma_log ** 2 / 2.0) - 1.0
-        cost_std = cost_mean * sigma_log  # approximate SD for small sigma
+        sigma_sq = min(sigma_log ** 2, 50.0)
+        shifted_cost_mean = math.exp(min(mu_log + sigma_sq / 2.0, 50.0))
+        cost_mean = max(0.0, shifted_cost_mean - 1.0)
+        if sigma_sq == 0.0:
+            cost_std = 0.0
+        else:
+            log_cost_variance = (
+                math.log(math.expm1(sigma_sq)) + 2.0 * mu_log + sigma_sq
+            )
+            cost_std = math.exp(min(log_cost_variance, 50.0) / 2.0)
 
         term_probs = F.softmax(outputs["term_logits"], dim=-1).squeeze(0).tolist()
 
@@ -652,6 +746,7 @@ def compute_loss(
     target_cost: torch.Tensor,
     target_term: torch.Tensor,
     *,
+    cost_loss_weight: float = 1.0,
     term_loss_weight: float = 0.2,
 ) -> dict[str, torch.Tensor]:
     """Compute episodic loss.
@@ -663,11 +758,17 @@ def compute_loss(
         target_success: (B,) binary success
         target_cost: (B,) raw cost values (>= 0)
         target_term: (B,) termination class indices (long)
+        cost_loss_weight: weight for the cost likelihood
         term_loss_weight: weight for termination auxiliary loss
 
     Returns:
         dict with "total", "success", "cost", "term"
     """
+    if not math.isfinite(cost_loss_weight) or cost_loss_weight < 0.0:
+        raise ValueError("cost_loss_weight must be finite and nonnegative")
+    if not math.isfinite(term_loss_weight) or term_loss_weight < 0.0:
+        raise ValueError("term_loss_weight must be finite and nonnegative")
+
     # Bernoulli NLL for success.
     success_loss = F.binary_cross_entropy_with_logits(
         outputs["logit_success"], target_success
@@ -676,18 +777,22 @@ def compute_loss(
     # Log-normal NLL for cost: log(1+C) ~ N(mu, sigma^2).
     log_cost = torch.log1p(target_cost.clamp(min=0.0))
     mu_log = outputs["cost_params"][:, 0]
-    log_sigma = outputs["cost_params"][:, 1]
-    sigma = F.softplus(log_sigma) + _EPS
+    raw_scale = outputs["cost_params"][:, 1]  # unconstrained log-sigma
+    sigma = F.softplus(raw_scale) + _EPS
     cost_nll = (
         0.5 * math.log(2.0 * math.pi)
-        + log_sigma
+        + torch.log(sigma)
         + 0.5 * ((log_cost - mu_log) / sigma) ** 2
     ).mean()
 
     # Categorical CE for termination.
     term_loss = F.cross_entropy(outputs["term_logits"], target_term.long())
 
-    total = success_loss + cost_nll + term_loss_weight * term_loss
+    total = (
+        success_loss
+        + cost_loss_weight * cost_nll
+        + term_loss_weight * term_loss
+    )
 
     return {
         "total": total,

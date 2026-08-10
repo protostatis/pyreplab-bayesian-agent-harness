@@ -12,11 +12,20 @@ Each row carries the task identity fields (``task_id``, ``family``,
 ``contract``, raw ``public_metadata``), the attempt identity
 (``attempt_id``, ``policy_id``, ``policy_version``), a whole-task group split,
 the verified outcome (``verified_success``, ``failure_code``, verifier ids),
+a coarse ``termination_class``, ``output_token_cost`` from ``usage.output``,
 post-action cost counters from the normalized Pi events (``usage``,
 ``assistant_message_count``, ``provider_turn_count``, ``tool_call_count``,
 ``tool_limit_rejection_count``, ``length_stop_count``, ``final_text_length``)
 and an explicit nested ``model_input`` that contains *only* predecision
 information.
+
+For Unbrowser grammar treatments (``native_bash_unbrowser_interactive_v1``)
+the ``model_input`` is identity-free and follows an M3/CNP nested schema:
+``model_input.task`` (32-d deterministic embedding, template, difficulty,
+family, public_metadata) and ``model_input.treatment`` (grammar factor
+labels, 13-d vector, ``enforced_tool_call_cap``, ``tool_interface``,
+``allowed_tools_signature``).  The top-level row keeps identity fields for
+join/audit use.
 
 Leakage boundary
 ----------------
@@ -59,6 +68,7 @@ import tempfile
 from pathlib import Path
 from typing import Any, Iterator
 
+from .meta_grammar import grammar_factor_vector as _meta_grammar_factor_vector
 from .treatments import (
     TreatmentRegistry,
     TreatmentSpec,
@@ -143,6 +153,69 @@ _UNBROWSER_GRAMMAR_FACTOR_KEYS = (
 )
 
 
+def _compute_task_embedding(text: str) -> dict[str, Any]:
+    """Deterministic 32-d task-text embedding via ASCII-token SHA-256 projection.
+
+    Tokenises the text into ASCII space-delimited tokens, XOR-accumulates each
+    token's SHA-256 digest bytewise, converts the 32 accumulated bytes into
+    signed floats in [-1, 1], and L2-normalises the resulting vector.
+
+    The result is process-stable (no *hash()*, no iteration order).  It is
+    plumbing-only — not semantic-effectiveness evidence.
+    """
+    raw_text = text.encode("ascii", errors="replace").decode("ascii")
+    tokens = raw_text.split()
+    if not tokens:
+        return {
+            "encoder": "sha256_ascii_projection_v1",
+            "version": 1,
+            "vector": [0.0] * 32,
+        }
+    # XOR-accumulate each token's 32-byte SHA-256 digest.
+    acc = bytearray(32)
+    for token in tokens:
+        digest = hashlib.sha256(token.encode("utf-8")).digest()
+        for i in range(32):
+            acc[i] ^= digest[i]
+    # Convert bytes -> floats in [-1, 1], then L2-normalise.
+    raw = [((b / 127.5) - 1.0) for b in acc]
+    norm = math.sqrt(sum(v * v for v in raw))
+    if norm > 0:
+        vector = [v / norm for v in raw]
+    else:
+        vector = [0.0] * 32
+    return {
+        "encoder": "sha256_ascii_projection_v1",
+        "version": 1,
+        "vector": vector,
+    }
+
+
+_TERMINATION_KNOWN = frozenset(
+    {"tool_call_limit", "wall_timeout", "invalid_or_tool_error", "model_runtime_failure"}
+)
+
+
+def _derive_termination_class(
+    verified_success: bool,
+    failure_code: str | None,
+    tool_limit_rejection_count: int,
+    length_stop_count: int,
+) -> str:
+    """Coarse termination class from verifier outcome and Pi-event signals."""
+    if failure_code and failure_code in _TERMINATION_KNOWN:
+        return failure_code
+    if tool_limit_rejection_count > 0:
+        return "tool_call_limit"
+    if length_stop_count > 0:
+        return "wall_timeout"
+    if verified_success:
+        return "normal_completion"
+    if failure_code is not None:
+        return "verifier_declared_unsuccessful"
+    return "normal_completion"
+
+
 def _grammar_factors_from_treatment(
     treatment: TreatmentSpec,
 ) -> dict[str, str] | None:
@@ -176,17 +249,64 @@ def build_model_input(
     Only information available before policy assignment may enter here: the
     prompt/contract text, family/template/difficulty, the numeric/bool public
     metadata and the chosen policy identity. No post-action fields.
+
+    For Unbrowser grammar treatments (``native_bash_unbrowser_interactive_v1``)
+    the output follows the M3/CNP leakage-safe nested schema:
+
+    * ``model_input.task`` — task embedding, template, difficulty, family,
+      public_metadata.
+    * ``model_input.treatment`` — grammar factor labels, 13-d factor vector,
+      ``enforced_tool_call_cap``, ``tool_interface``,
+      ``allowed_tools_signature``.
+
+    Neither ``policy_id``/``version``/``bundle_id``/``bundle_hash`` nor system
+    prompt text appear inside ``model_input`` for grammar rows.
     """
     parts = [task["prompt"]]
     contract = task["contract"]
     if contract:
         parts.append("\n".join(contract))
+    task_text = "\n\n".join(parts)
+    public_meta = flatten_public_metadata(task["public_metadata"])
+
+    is_grammar = (
+        treatment is not None
+        and treatment.tool_interface == _UNBROWSER_GRAMMAR_INTERFACE
+    )
+
+    if is_grammar:
+        if treatment.id != policy_id or treatment.version != policy_version:  # type: ignore[union-attr]
+            raise ValueError(
+                "attempt policy identity does not match treatment registry entry: "
+                f"{policy_id}@{policy_version} != {treatment.id}@{treatment.version}"  # type: ignore[union-attr]
+            )
+        factors = _grammar_factors_from_treatment(treatment)  # type: ignore[arg-type]
+        factor_vec = _meta_grammar_factor_vector(treatment)  # 13-d  # type: ignore[arg-type]
+        model_input: dict[str, Any] = {
+            "task": {
+                "task_embedding": _compute_task_embedding(task_text),
+                "template": task["template_id"],
+                "difficulty": task["difficulty"],
+                "family": task["family"],
+                "public_metadata": public_meta,
+            },
+            "treatment": {
+                "grammar_factors": factors if factors is not None else {},
+                "grammar_factor_vector": factor_vec,
+                "enforced_tool_call_cap": treatment.tool_call_limit,  # type: ignore[union-attr]
+                "tool_interface": treatment.tool_interface,  # type: ignore[union-attr]
+                "allowed_tools_signature": treatment.allowed_tools_signature,  # type: ignore[union-attr]
+            },
+        }
+        return model_input
+
+    # ---------- legacy generic path (non-grammar treatments) -----------------
     model_input = {
-        "text": "\n\n".join(parts),
+        "text": task_text,
         "family": task["family"],
         "template_id": task["template_id"],
         "difficulty": task["difficulty"],
-        "public_metadata": flatten_public_metadata(task["public_metadata"]),
+        "public_metadata": public_meta,
         "policy_id": policy_id,
         "policy_version": policy_version,
     }
@@ -332,6 +452,24 @@ def _build_row(
 ) -> dict[str, Any]:
     policy_id = str(attempt["policy_id"])
     policy_version = str(attempt["policy_version"])
+    # --- output_token_cost (must be finite non-negative) ----------------------
+    output_cost = normalized["usage"].get("output")
+    if output_cost is None or not isinstance(output_cost, int):
+        raise ValueError(
+            f"missing or non-integer usage.output for attempt {attempt['attempt_id']}"
+        )
+    if output_cost < 0 or not math.isfinite(output_cost):
+        raise ValueError(
+            f"non-finite or negative usage.output {output_cost!r} "
+            f"for attempt {attempt['attempt_id']}"
+        )
+    # --- termination_class (coarse) -------------------------------------------
+    termination_class = _derive_termination_class(
+        verification["verified_success"],
+        verification["failure_code"],
+        normalized["tool_limit_rejection_count"],
+        normalized["length_stop_count"],
+    )
     row = {
         "task_id": task["task_id"],
         "family": task["family"],
@@ -350,6 +488,8 @@ def _build_row(
         "failure_code": verification["failure_code"],
         "verifier_id": verification["verifier_id"],
         "verifier_version": verification["verifier_version"],
+        "output_token_cost": output_cost,
+        "termination_class": termination_class,
         "usage": dict(normalized["usage"]),
         "assistant_message_count": normalized["assistant_message_count"],
         "provider_turn_count": normalized["provider_turn_count"],
@@ -361,6 +501,18 @@ def _build_row(
             task, policy_id, policy_version, treatment=treatment
         ),
     }
+    task_role = task["public_metadata"].get("task_role")
+    if isinstance(task_role, str) and task_role:
+        row["task_role"] = task_role
+    for field in (
+        "rollout_replica",
+        "sampling_seed",
+        "pilot_manifest_hash",
+        "pilot_panel_id",
+    ):
+        value = attempt.get(field)
+        if value is not None:
+            row[field] = value
     if treatment is not None:
         if not treatment_registry_hash:
             raise ValueError(
@@ -431,7 +583,15 @@ def _scan(
                 continue
             normalized = _parse_normalized_events(events_path)
 
-            split = task_split(task["template_id"], task["seed"])
+            task_role = task["public_metadata"].get("task_role")
+            excluded_roles = {
+                "T_pilot": "pilot_excluded",
+                "T_canary": "canary_excluded",
+            }
+            split = excluded_roles.get(
+                task_role,
+                task_split(task["template_id"], task["seed"]),
+            )
             treatment: TreatmentSpec | None = None
             if registry is not None:
                 try:
@@ -579,6 +739,10 @@ if __name__ == "__main__":
 
 
 __all__ = [
+    "_compute_task_embedding",
+    "_derive_termination_class",
+    "_grammar_factors_from_treatment",
+    "_UNBROWSER_GRAMMAR_INTERFACE",
     "build_dataset",
     "build_model_input",
     "build_parser",

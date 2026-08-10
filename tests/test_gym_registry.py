@@ -188,6 +188,90 @@ class RegistryTest(unittest.TestCase):
             result = json.loads(buffer.getvalue())
             self.assertFalse(result["success"])
 
+    def test_cli_generate_passes_fixture_template_to_unbrowser_fixture(self) -> None:
+        """--fixture-template reaches the generated task's public_metadata."""
+        with tempfile.TemporaryDirectory() as directory:
+            buffer = io.StringIO()
+            with redirect_stdout(buffer):
+                code = cli_main(
+                    [
+                        "generate",
+                        "--family",
+                        "unbrowser_fixture",
+                        "--root",
+                        directory,
+                        "--seed",
+                        "42",
+                        "--difficulty",
+                        "easy",
+                        "--fixture-template",
+                        "table_filter_sort",
+                    ]
+                )
+            self.assertEqual(code, 0)
+            task = json.loads(buffer.getvalue())
+            self.assertEqual(task["family"], "unbrowser_fixture")
+            self.assertEqual(task["template_id"], "table_filter_sort")
+            metadata = task["public_metadata"]
+            self.assertEqual(metadata["template"], "table_filter_sort")
+            self.assertIn("table_filter_sort", metadata["fixture_url"])
+
+    def test_cli_generate_ignores_fixture_template_for_non_fixture_families(self) -> None:
+        """--fixture-template is silently ignored for non-fixture families."""
+        with tempfile.TemporaryDirectory() as directory:
+            buffer = io.StringIO()
+            with redirect_stdout(buffer):
+                code = cli_main(
+                    [
+                        "generate",
+                        "--family",
+                        "artifact",
+                        "--root",
+                        directory,
+                        "--seed",
+                        "7",
+                        "--difficulty",
+                        "easy",
+                        "--fixture-template",
+                        "cross_page_comparison",
+                    ]
+                )
+            self.assertEqual(code, 0)
+            task = json.loads(buffer.getvalue())
+            self.assertEqual(task["family"], "artifact")
+
+    def test_generate_task_kwarg_forwards_to_fixture_only(self) -> None:
+        """generate_task only passes fixture_template to unbrowser_fixture."""
+        with tempfile.TemporaryDirectory() as directory:
+            fixture_task = generate_task(
+                "unbrowser_fixture", directory, 1, "easy",
+                fixture_template="distractor_recovery",
+            )
+            self.assertEqual(
+                fixture_task.public_metadata["template"], "distractor_recovery"
+            )
+            # Non-fixture family silently ignores the template kwarg.
+            artifact_task = generate_task(
+                "artifact", directory, 1, "easy",
+                fixture_template="bogus_ignored",
+            )
+            self.assertEqual(artifact_task.family, "artifact")
+
+    def test_task_role_is_fixture_only(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            task = generate_task(
+                "unbrowser_fixture",
+                directory,
+                3,
+                "easy",
+                task_role="T_pilot",
+            )
+            self.assertEqual(task.public_metadata["task_role"], "T_pilot")
+            with self.assertRaisesRegex(ValueError, "only supported"):
+                generate_task(
+                    "artifact", directory, 4, "easy", task_role="T_pilot"
+                )
+
 
 class OrchestratorTest(unittest.TestCase):
     def test_pair_order_is_deterministic_from_seed(self) -> None:
@@ -249,6 +333,8 @@ class OrchestratorTest(unittest.TestCase):
                 return {"id": "t9", "prompt": "p"}
             if head == "prepare-attempt":
                 return {"workspace_ref": "/r/ws"}
+            if head == "record-events":
+                return {"recorded": 0}
             if head == "verify":
                 return {
                     "success": False,
@@ -280,9 +366,11 @@ class OrchestratorTest(unittest.TestCase):
 
         generate = [c for c in commands if c[0] == "generate"]
         verify = [c for c in commands if c[0] == "verify"]
+        record = [c for c in commands if c[0] == "record-events"]
         self.assertEqual(len(generate), 1)
         self.assertEqual(generate[0][2], "artifact")
         self.assertEqual(len(verify), 1)
+        self.assertEqual(len(record), 1)
         # Pi failure and verification failure are both still reported.
         self.assertFalse(result["verification"]["success"])
         self.assertEqual(result["pi_return_code"], 3)

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import os
+import shutil
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -71,12 +73,26 @@ class UnbrowserSandboxTest(unittest.TestCase):
             cmd = sandbox.build_command()
             self.assertNotIn("--unshare-net", cmd)
 
-    def test_mount_namespace_is_unshared(self) -> None:
+    def test_does_not_use_nonportable_unshare_mount_flag(self) -> None:
         with tempfile.TemporaryDirectory() as d:
             binary = self._fake_binary(d)
             sandbox = UnbrowserSandbox(binary)
             cmd = sandbox.build_command()
-            self.assertIn("--unshare-mount", cmd)
+            self.assertNotIn("--unshare-mount", cmd)
+
+    @unittest.skipUnless(
+        shutil.which("bwrap") and shutil.which("timeout") and Path("/bin/true").is_file(),
+        "requires bwrap, timeout, and /bin/true",
+    )
+    def test_built_command_is_accepted_by_installed_bubblewrap(self) -> None:
+        result = subprocess.run(
+            UnbrowserSandbox("/bin/true").build_command(),
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_user_namespace_is_unshared(self) -> None:
         with tempfile.TemporaryDirectory() as d:

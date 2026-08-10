@@ -58,6 +58,16 @@ class EventNormalizerTest(unittest.TestCase):
         self.assertEqual(normalized["length_stop_count"], 1)
         self.assertEqual(normalized["stop_reasons"], {"length": 1, "toolUse": 1})
         self.assertEqual(normalized["tool_limit_rejection_count"], 0)
+        self.assertEqual(
+            normalized["planning_preamble"],
+            {
+                "present": False,
+                "line_count": 0,
+                "character_count": 0,
+                "plan_marker": False,
+                "step_marker_count": 0,
+            },
+        )
 
     def test_counts_tool_limit_rejections(self) -> None:
         raw = json.dumps(
@@ -74,6 +84,26 @@ class EventNormalizerTest(unittest.TestCase):
         )
         normalized = normalize_pi_events(raw)
         self.assertEqual(normalized["tool_limit_rejection_count"], 1)
+        self.assertTrue(normalized["tool_executions"][0]["budget_rejected"])
+
+    def test_summarizes_pre_tool_planning_without_retaining_text(self) -> None:
+        raw = json.dumps(
+            {
+                "type": "message_end",
+                "message": {
+                    "role": "assistant",
+                    "content": [
+                        {"type": "text", "text": "STEP 1: inspect\nSTEP 2: submit"},
+                        {"type": "toolCall", "name": "unbrowser"},
+                        {"type": "text", "text": "not pre-tool"},
+                    ],
+                },
+            }
+        )
+        normalized = normalize_pi_events(raw)
+        self.assertEqual(normalized["planning_preamble"]["step_marker_count"], 2)
+        self.assertEqual(normalized["planning_preamble"]["line_count"], 2)
+        self.assertNotIn("inspect", json.dumps(normalized["planning_preamble"]))
 
     def test_rejects_non_json_lines(self) -> None:
         with self.assertRaisesRegex(ValueError, "line 2"):

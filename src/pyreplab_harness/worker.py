@@ -16,19 +16,15 @@ FIXTURE_PORT = 18090
 _fixture_server_instance: FixtureServer | None = None
 
 
-def ensure_fixture_server() -> FixtureServer | None:
+def ensure_fixture_server() -> FixtureServer:
     """Start the fixture server on the fixed port if not already running.
 
-    Returns the FixtureServer instance, or None if it could not be started
-    (e.g. port already in use).
+    Raises if the fixed port cannot be bound. A different process on the port
+    must never be mistaken for the harness-owned deterministic fixture server.
     """
     global _fixture_server_instance
     if _fixture_server_instance is None:
-        try:
-            _fixture_server_instance = FixtureServer(port=FIXTURE_PORT)
-        except OSError:
-            # Port already in use — another worker may have started it.
-            pass
+        _fixture_server_instance = FixtureServer(port=FIXTURE_PORT)
     return _fixture_server_instance
 
 

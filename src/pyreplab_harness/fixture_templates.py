@@ -44,6 +44,7 @@ class FixturePage:
     title: str
     nonce: str
     oracle: dict[str, Any]
+    status: int = 200
 
 
 # ---------------------------------------------------------------------------
@@ -208,7 +209,6 @@ def _generate_single_page_extraction(
 </table>
 <p>To complete the verification task, locate the employee <strong>{html.escape(target_name)}</strong>
 and record their <strong>Access Code</strong> as the answer.</p>
-{_nonce_div(nonce)}
 """
 
     oracle = {
@@ -310,7 +310,6 @@ def _generate_table_filter_sort(
 then sort by <strong>Price ascending</strong>.
 Report the <strong>Reference Code</strong> of the <strong>{target_rank}{_ordinal_suffix(target_rank)}</strong> item
 in the filtered and sorted results.</p>
-{_nonce_div(nonce)}
 """
 
     oracle = {
@@ -560,7 +559,11 @@ Locate the item named <strong>{html.escape(winner_name)}</strong> and record its
         )
 
     # Show search results
-    matches = [it for it in items if search_term.lower() in it["category"].lower()]
+    matches = [
+        it
+        for it in items
+        if search_term.casefold() == str(it["category"]).casefold()
+    ]
     if not matches:
         body = f"""\
 <h1>Search Results for "{html.escape(search_term)}"</h1>
@@ -583,7 +586,6 @@ Locate the item named <strong>{html.escape(winner_name)}</strong> and record its
 <tbody>{rows}</tbody>
 </table>
 <p><a href="{_href(f'{template}/{seed}/{difficulty}')}">New search</a></p>
-{_nonce_div(nonce)}
 """
 
     return FixturePage(
@@ -624,7 +626,8 @@ def _generate_form_entry_validation(
         {"name": "full_name", "label": "Full Name", "type": "text",
          "required": True, "pattern": None, "hint": "Your legal name"},
         {"name": "email", "label": "Email Address", "type": "text",
-         "required": True, "pattern": None, "hint": "e.g. user@example.com"},
+         "required": True, "pattern": r"^[^@\s]+@[^@\s]+\.[^@\s]+$",
+         "hint": "e.g. user@example.com"},
         {"name": "reference", "label": "Reference Number", "type": "text",
          "required": True, "pattern": r"^REF-\d{5}$",
          "hint": "Format: REF-12345"},
@@ -636,8 +639,8 @@ def _generate_form_entry_validation(
          "required": True, "pattern": r"^LVL-[ABC]$",
          "hint": "Format: LVL-A, LVL-B, or LVL-C"},
         {"name": "project_code", "label": "Project Code", "type": "text",
-         "required": False, "pattern": None,
-         "hint": "Optional project identifier"},
+         "required": False, "pattern": r"^PRJ-\d{3}$",
+         "hint": "Optional; format PRJ-123"},
     ]
 
     fields = field_specs[:num_fields]
@@ -673,6 +676,8 @@ def _generate_form_entry_validation(
                 import re
                 if not re.match(f["pattern"], val.strip()):
                     errors.append(f"{f['label']} must match pattern: {f.get('hint', '')}")
+            elif f.get("options") and val.strip() not in f["options"]:
+                errors.append(f"{f['label']} must be one of the listed options.")
         if errors:
             body = f"""\
 <h1>Form Validation Error</h1>
@@ -800,6 +805,11 @@ def _generate_cross_page_comparison(
     # Determine which location has the highest total revenue
     max_loc_idx = max(range(npages), key=lambda i: quarterly_data[i]["total"])
     target_loc = selected_locs[max_loc_idx]
+    branch_keys = [
+        generate_nonce(f"{template}:branch:{index}", seed, difficulty)
+        for index in range(npages)
+    ]
+    branch_keys[max_loc_idx] = nonce
 
     if page is None or page == "":
         # Hub page with links
@@ -855,7 +865,7 @@ and record its <strong>Branch Verification Key</strong>.</p>
 
     data = quarterly_data[page_idx]
     loc = selected_locs[page_idx]
-    is_target = (page_idx == max_loc_idx)
+    branch_key = branch_keys[page_idx]
 
     qrows = ""
     for q, v in data["quarters"].items():
@@ -869,20 +879,14 @@ and record its <strong>Branch Verification Key</strong>.</p>
 <tbody>{qrows}</tbody>
 </table>
 """
-    if is_target:
-        body += f"""\
-<p>Performance rating: <strong>Top Performer</strong></p>
-{_nonce_div(nonce)}
-"""
-    else:
-        body += "<p>Performance rating: <strong>Standard</strong></p>\n"
+    body += _nonce_div(branch_key).replace("VERIFICATION:", "BRANCH VERIFICATION KEY:")
 
     body += f'<p><a href="{_href(f"{template}/{seed}/{difficulty}")}">Return to Reports Hub</a></p>\n'
 
     return FixturePage(
         html=_wrap(f"{loc} Branch Revenue Report", body),
         title=f"{loc} Branch Revenue Report",
-        nonce=nonce if is_target else "",
+        nonce=branch_key,
         oracle={
             "expected_answer": nonce,
             "nonce": nonce,
@@ -895,6 +899,18 @@ and record its <strong>Branch Verification Key</strong>.</p>
 # ---------------------------------------------------------------------------
 # Template 7: stateful_workflow
 # ---------------------------------------------------------------------------
+
+
+def _workflow_state_token(
+    template: str,
+    seed: int,
+    difficulty: str,
+    completed_choices: list[int],
+) -> str:
+    """Opaque deterministic token proving the required prior steps occurred."""
+    path = ",".join(str(choice) for choice in completed_choices)
+    raw = f"{template}:{seed}:{difficulty}:{path}:workflow-v2"
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:20]
 
 
 def _generate_stateful_workflow(
@@ -912,29 +928,50 @@ def _generate_stateful_workflow(
                   "Security", "Storage", "Compute", "Analytics", "Integration"]
     selected_cats = rng.sample(categories, nchoices)
 
-    # Deterministically build the workflow:
-    # For each step, there are nchoices options, each leading to different sub-steps.
-    # The "correct" path is determined by seed.
-    correct_path = [rng.randrange(nchoices) for _ in range(nsteps)]
+    workflow_rng = _seeded_rng(template, seed, f"{difficulty}-workflow-v2")
+    suffixes = ["Basic", "Pro", "Enterprise", "Lite", "XR", "Plus"]
+    step_options: list[list[tuple[str, int]]] = []
+    correct_path: list[int] = []
+    for step_num in range(nsteps):
+        scores = workflow_rng.sample(range(100, 1000), nchoices)
+        options = [
+            (
+                f"{selected_cats[index]} {suffixes[(step_num + index) % len(suffixes)]}",
+                scores[index],
+            )
+            for index in range(nchoices)
+        ]
+        step_options.append(options)
+        correct_path.append(max(range(nchoices), key=lambda index: scores[index]))
+
+    state_tokens = [
+        _workflow_state_token(template, seed, difficulty, correct_path[:step_num])
+        for step_num in range(nsteps)
+    ]
+
+    def option_links(step_num: int, state_token: str) -> str:
+        links = ""
+        for index, (label, score) in enumerate(step_options[step_num]):
+            target = _href(f"{template}/{seed}/{difficulty}/step/{step_num}")
+            links += (
+                f'<li><a href="{target}?choice={index}&amp;state={state_token}">'
+                f'{html.escape(label)}</a> &mdash; compatibility score '
+                f'<strong>{score}</strong></li>\n'
+            )
+        return links
 
     if page is None or page == "":
-        # Step 0: choose a category
-        links = ""
-        for i, cat in enumerate(selected_cats):
-            links += (
-                f'<li><a href="{_href(f"{template}/{seed}/{difficulty}/step/0")}'
-                f'?choice={i}">{html.escape(cat)}</a></li>\n'
-            )
+        links = option_links(0, state_tokens[0])
         page_fp = f"WF-IDX-{rng.randint(1000, 9999)}"
         body = f"""\
 <h1>Procurement Workflow &mdash; Step 1 of {nsteps}</h1>
 <p class="note">Workflow reference: <code>{page_fp}</code></p>
-<p class="note">Select a product category to begin.</p>
-<h2>Available Categories</h2>
+<p class="note">At every step, select the option with the highest compatibility score.</p>
+<h2>Available Options</h2>
 <ul>
 {links}</ul>
-<p>Task: Navigate through the procurement workflow by selecting the correct options
-at each step. At the final step, record the <strong>Verification Key</strong>.</p>
+<p>Task: Complete every step in order. At the final step, record the
+<strong>Verification Key</strong>.</p>
 """
         return FixturePage(
             html=_wrap("Procurement Workflow", body),
@@ -946,17 +983,18 @@ at each step. At the final step, record the <strong>Verification Key</strong>.</
                 "verification_type": "exact_match",
                 "correct_path": correct_path,
                 "num_steps": nsteps,
+                "state_tokens": state_tokens,
             },
         )
 
-    # Parse the page identifier: "step/N"
-    if page.startswith("step/"):
+    # Parse the page identifier: "step/N".
+    if page and page.startswith("step/"):
         try:
             step_num = int(page.split("/")[1])
         except (ValueError, IndexError):
-            step_num = 0
+            step_num = -1
     else:
-        step_num = 0
+        step_num = -1
 
     if step_num < 0 or step_num >= nsteps:
         body = f"""\
@@ -970,6 +1008,26 @@ at each step. At the final step, record the <strong>Verification Key</strong>.</
             oracle={"expected_answer": nonce, "nonce": nonce, "verification_type": "exact_match"},
         )
 
+    expected_state = state_tokens[step_num]
+    observed_state = query_params.get("state", "") if query_params else ""
+    if observed_state != expected_state:
+        body = f"""\
+<h1>Workflow State Error</h1>
+<div class="error"><strong>Required prior workflow state is missing or stale.</strong></div>
+<p>Complete the procurement steps in order from the beginning.</p>
+<p><a href="{_href(f'{template}/{seed}/{difficulty}')}">Return to start</a></p>
+"""
+        return FixturePage(
+            html=_wrap("Workflow State Error", body),
+            title="Workflow State Error",
+            nonce="",
+            oracle={
+                "expected_answer": nonce,
+                "nonce": nonce,
+                "verification_type": "exact_match",
+            },
+        )
+
     choice = None
     if query_params and "choice" in query_params:
         try:
@@ -978,21 +1036,10 @@ at each step. At the final step, record the <strong>Verification Key</strong>.</
             choice = None
 
     if choice is None:
-        # Show options for this step (no selection made yet)
-        sub_items = [f"{cat} {suf}" for cat in selected_cats
-                     for suf in rng.sample(["Basic", "Pro", "Enterprise", "Lite"], 1)]
-        sub_selected = rng.sample(sub_items, nchoices)
-
-        links = ""
-        for i, item in enumerate(sub_selected):
-            links += (
-                f'<li><a href="{_href(f"{template}/{seed}/{difficulty}/step/{step_num}")}'
-                f'?choice={i}">{html.escape(item)}</a></li>\n'
-            )
-        next_step = step_num + 2  # display as step N+1 of total
+        links = option_links(step_num, expected_state)
         body = f"""\
-<h1>Procurement Workflow &mdash; Step {next_step} of {nsteps}</h1>
-<p class="note">Select an option to proceed.</p>
+<h1>Procurement Workflow &mdash; Step {step_num + 1} of {nsteps}</h1>
+<p class="note">Select the option with the highest compatibility score.</p>
 <h2>Options</h2>
 <ul>
 {links}</ul>
@@ -1011,10 +1058,11 @@ at each step. At the final step, record the <strong>Verification Key</strong>.</
     is_correct = (choice == correct_path[step_num])
 
     if not is_correct:
+        retry_url = _href(f"{template}/{seed}/{difficulty}/step/{step_num}")
         body = f"""\
 <h1>Selection Error</h1>
-<div class="error"><strong>Invalid or deprecated item:</strong> this option is no longer available.</div>
-<p><a href="{_href(f'{template}/{seed}/{difficulty}/step/{step_num}')}">Try a different option</a></p>
+<div class="error"><strong>Incorrect selection:</strong> choose the option with the highest compatibility score.</div>
+<p><a href="{retry_url}?state={expected_state}">Try a different option</a></p>
 <p><a href="{_href(f'{template}/{seed}/{difficulty}')}">Return to start</a></p>
 """
         return FixturePage(
@@ -1046,22 +1094,12 @@ at each step. At the final step, record the <strong>Verification Key</strong>.</
             },
         )
 
-    # Transition to next step
     next_step = step_num + 1
-    next_sub_items = [f"{cat}-{rng.choice(['v2', 'v3', 'mkII', 'XR'])}"
-                      for cat in selected_cats]
-    next_selected = rng.sample(next_sub_items, nchoices)
-
-    links = ""
-    for i, item in enumerate(next_selected):
-        links += (
-            f'<li><a href="{_href(f"{template}/{seed}/{difficulty}/step/{next_step}")}'
-            f'?choice={i}">{html.escape(item)}</a></li>\n'
-        )
-    display_step = step_num + 2
+    links = option_links(next_step, state_tokens[next_step])
     body = f"""\
-<h1>Procurement Workflow &mdash; Step {display_step} of {nsteps}</h1>
+<h1>Procurement Workflow &mdash; Step {next_step + 1} of {nsteps}</h1>
 <div class="success"><strong>Previous selection accepted.</strong></div>
+<p class="note">Select the option with the highest compatibility score.</p>
 <h2>Next Options</h2>
 <ul>
 {links}</ul>
@@ -1172,6 +1210,8 @@ Ignore broken, stale, or misleading links. Record the key from the correct page.
                 "num_decoys": ndecoys,
                 "num_injections": ninjections,
                 "correct_page": f"page_{nonce_page_id}",
+                "required_probe_page": "page_0",
+                "required_probe_label": selected_decoys[0],
             },
         )
 
@@ -1221,6 +1261,7 @@ Ignore broken, stale, or misleading links. Record the key from the correct page.
                 "expected_answer": nonce, "nonce": nonce,
                 "verification_type": "exact_match",
             },
+            status=503,
         )
 
     if page_idx == nonce_page_id:

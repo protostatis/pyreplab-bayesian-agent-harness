@@ -83,6 +83,32 @@ class ComputeFrontierTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             frontier_eval.compute_frontier([], [], [0.0])
 
+    def test_empty_lambda_grid_raises(self) -> None:
+        with self.assertRaisesRegex(ValueError, "lambda_grid must not be empty"):
+            frontier_eval.compute_frontier(
+                self._make_predictions(2, 2), self._make_outcomes(2, 2), [],
+            )
+
+    def test_lambda_zero_is_required(self) -> None:
+        with self.assertRaisesRegex(ValueError, "include 0.0"):
+            frontier_eval.compute_frontier(
+                self._make_predictions(2, 2), self._make_outcomes(2, 2), [0.5],
+            )
+
+    def test_missing_observed_cost_raises(self) -> None:
+        predictions = self._make_predictions(2, 2)
+        outcomes = self._make_outcomes(2, 2)
+        del outcomes[0][0]["cost"]
+        with self.assertRaisesRegex(ValueError, "incomplete observed outcome"):
+            frontier_eval.compute_frontier(predictions, outcomes, [0.0])
+
+    def test_nonfinite_prediction_raises(self) -> None:
+        predictions = self._make_predictions(2, 2)
+        outcomes = self._make_outcomes(2, 2)
+        predictions[0][0]["cost_mean"] = float("nan")
+        with self.assertRaisesRegex(ValueError, "cost_mean"):
+            frontier_eval.compute_frontier(predictions, outcomes, [0.0])
+
     def test_result_structure(self) -> None:
         predictions = self._make_predictions(4, 2)
         outcomes = self._make_outcomes(4, 2)
@@ -95,6 +121,129 @@ class ComputeFrontierTest(unittest.TestCase):
         self.assertIn("oracle_pure_success_rate", result)
         self.assertIn("regret_vs_oracle", result)
         self.assertIn("lambda_results", result)
+
+
+# -----------------------------------------------------------------------
+# Bug 2: Pareto frontier dominance logic tests (points are (cost, success))
+# -----------------------------------------------------------------------
+class ParetoFrontierTest(unittest.TestCase):
+    """Direct tests for the nondominated frontier with known points.
+
+    These would FAIL on the previous code that reversed the dominance
+    check (si, ci = points[i]  but points are (cost, success), so
+    si was cost and ci was success, flipping the comparison).
+    """
+
+    def test_known_dominated_point_excluded(self) -> None:
+        """(cost=10, success=0.8) dominates (cost=20, success=0.7)."""
+        points = [
+            (10.0, 0.8),   # better: lower cost, higher success
+            (20.0, 0.7),   # dominated
+        ]
+        frontier = frontier_eval._pareto_frontier(points)
+        self.assertIn((10.0, 0.8), frontier,
+                      "Better point should be on frontier")
+        self.assertNotIn((20.0, 0.7), frontier,
+                         "Dominated point (higher cost, lower success) "
+                         "should be excluded")
+
+    def test_known_non_dominated_both_kept(self) -> None:
+        """Neither dominates the other: mutual nondominance."""
+        points = [
+            (10.0, 0.6),   # lower cost, lower success
+            (30.0, 0.9),   # higher cost, higher success
+        ]
+        frontier = frontier_eval._pareto_frontier(points)
+        self.assertIn((10.0, 0.6), frontier,
+                      "Point with lower cost should be kept")
+        self.assertIn((30.0, 0.9), frontier,
+                      "Point with higher success should be kept")
+        self.assertEqual(len(frontier), 2)
+
+    def test_same_cost_same_success_deduplication(self) -> None:
+        """Identical points should be deduplicated."""
+        points = [(10.0, 0.5), (10.0, 0.5), (10.0, 0.5)]
+        frontier = frontier_eval._pareto_frontier(points)
+        self.assertEqual(len(frontier), 1)
+
+    def test_tie_cost_higher_success_dominates(self) -> None:
+        """Same cost but higher success dominates."""
+        points = [
+            (10.0, 0.9),   # dominates
+            (10.0, 0.5),   # dominated
+        ]
+        frontier = frontier_eval._pareto_frontier(points)
+        self.assertIn((10.0, 0.9), frontier)
+        self.assertNotIn((10.0, 0.5), frontier)
+
+    def test_tie_success_lower_cost_dominates(self) -> None:
+        """Same success but lower cost dominates."""
+        points = [
+            (5.0, 0.7),    # dominates
+            (15.0, 0.7),   # dominated
+        ]
+        frontier = frontier_eval._pareto_frontier(points)
+        self.assertIn((5.0, 0.7), frontier)
+        self.assertNotIn((15.0, 0.7), frontier)
+
+    def test_frontier_area_with_known_points(self) -> None:
+        """Frontier area from (cost=1, succ=0.8) to (cost=100, succ=1.0).
+
+        With log1p scaling: x0=ln(2), x1=ln(101)
+        area = (0.8+1.0)*(x1-x0)/2, approximately 3.53.
+
+        The third point (cost=50, succ=0.7) is dominated and excluded.
+        """
+        observed_success = [[0.8, 1.0, 0.7]]
+        observed_cost = [[1.0, 100.0, 50.0]]
+        selected_by_lambda = [
+            {"mean_cost": 1.0, "selected_success": 0.8},
+            {"mean_cost": 100.0, "selected_success": 1.0},
+            {"mean_cost": 50.0, "selected_success": 0.7},
+        ]
+
+        area = frontier_eval._compute_frontier_area(
+            observed_success, observed_cost, selected_by_lambda,
+            max_cost=100.0,
+        )
+        # Expected area using log1p: ~3.53
+        self.assertGreater(area, 2.0,
+                           "Frontier area should be positive")
+        self.assertLess(area, 5.0,
+                        "Frontier area should be reasonable")
+
+    def test_individual_cells_do_not_enter_allocator_frontier(self) -> None:
+        selected = [
+            {"mean_cost": 10.0, "selected_success": 0.6},
+            {"mean_cost": 20.0, "selected_success": 0.8},
+        ]
+        area_a = frontier_eval._compute_frontier_area(
+            [[0.0, 1.0]], [[1.0, 100.0]], selected, max_cost=100.0,
+        )
+        area_b = frontier_eval._compute_frontier_area(
+            [[1.0, 0.0]], [[50.0, 60.0]], selected, max_cost=100.0,
+        )
+        self.assertAlmostEqual(area_a, area_b)
+
+    def test_many_dominated_points_frontier_correct(self) -> None:
+        """Five points, only two nondominated."""
+        points = [
+            (5.0, 0.5),   # nondominated (low cost)
+            (10.0, 0.7),  # nondominated (better success)
+            (15.0, 0.6),  # dominated by (10, 0.7): higher cost, lower success
+            (8.0, 0.45),  # dominated by (5, 0.5)
+            (12.0, 0.65), # dominated by (10, 0.7)
+        ]
+        frontier = frontier_eval._pareto_frontier(points)
+        self.assertEqual(len(frontier), 2, f"Expected 2 nondominated, got {frontier}")
+        self.assertIn((5.0, 0.5), frontier)
+        self.assertIn((10.0, 0.7), frontier)
+
+    def test_empty_points(self) -> None:
+        self.assertEqual(frontier_eval._pareto_frontier([]), [])
+
+    def test_single_point(self) -> None:
+        self.assertEqual(frontier_eval._pareto_frontier([(5.0, 0.8)]), [(5.0, 0.8)])
 
 
 class GlobalRankingTest(unittest.TestCase):

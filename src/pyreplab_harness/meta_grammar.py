@@ -24,12 +24,15 @@ without modification.
 
 from __future__ import annotations
 
+import argparse
 import hashlib
+import itertools
 import json
 import random
+from pathlib import Path
 from typing import Any
 
-from .treatments import TreatmentSpec
+from .treatments import TreatmentRegistry, TreatmentSpec
 
 # ---------------------------------------------------------------------------
 # Frozen Unbrowser grammar factor definitions
@@ -38,61 +41,63 @@ from .treatments import TreatmentSpec
 _PLANNING = [
     (
         "direct",
-        "Solve the task directly without pre-planning. Start working immediately.",
+        "Solve the task directly without pre-planning. Do not emit any planning "
+        "text before the first tool call; start with the tool immediately.",
     ),
     (
         "brief_plan",
-        "Before acting, briefly think through the approach. State your plan "
-        "in one sentence, then execute.",
+        "Before the first tool call, emit exactly one line beginning 'PLAN:' "
+        "with a one-sentence approach, then execute.",
     ),
     (
         "decompose",
-        "Break the task into sub-problems. Solve each independently, then "
-        "combine the results into a final answer.",
+        "Before the first tool call, emit at least two decomposition lines "
+        "beginning 'STEP 1:' and 'STEP 2:'. Solve the steps independently, "
+        "then combine the results.",
     ),
 ]
 
 _OBSERVATION = [
     (
         "text_first",
-        "Start by reading the page text first. Use text extraction before "
-        "inspecting the page structure.",
+        "After navigate, the first successful observation must use the text "
+        "action. Use text extraction before inspecting structure.",
     ),
     (
         "structure_first",
-        "Start by inspecting the page structure first. Understand the DOM "
-        "layout before extracting text.",
+        "After navigate, the first successful observation must use the blockmap "
+        "action. Inspect structure before extracting text.",
     ),
     (
         "targeted_query_first",
-        "Start by running a targeted query or search first. Locate the "
-        "specific information you need before exploring the full page.",
+        "After navigate, the first successful observation must use the query "
+        "action with a targeted selector. Locate specific information first.",
     ),
 ]
 
 _VERIFICATION = [
     (
         "submit_directly",
-        "Submit the answer directly after arriving at a result. Do not "
-        "re-observe the page before submitting.",
+        "Submit directly after obtaining the candidate answer. Do not repeat a "
+        "read-only observation before writing result.json.",
     ),
     (
         "final_reobserve",
-        "After arriving at a result and before submitting, re-observe the "
-        "relevant page state to confirm the answer is still correct.",
+        "After obtaining the candidate answer and before writing result.json, "
+        "repeat a relevant read-only observation to confirm it.",
     ),
 ]
 
 _RECOVERY = [
     (
         "fail_fast",
-        "If a step fails or returns no useful information, stop the attempt "
-        "and report the failure. Do not retry.",
+        "If a tool call fails or returns no useful information, make no further "
+        "tool calls; stop and report the failure.",
     ),
     (
         "diagnose_retry_once",
-        "If a step fails, diagnose the problem and retry once with a "
-        "corrected approach before giving up.",
+        "If a tool call fails, diagnose the problem and retry that tool once "
+        "with a corrected approach before giving up.",
     ),
 ]
 
@@ -115,8 +120,11 @@ _SAFETY_SUFFIX = (
 _TOOL_INTERFACE = "native_bash_unbrowser_interactive_v1"
 _ALLOWED_TOOLS: tuple[str, ...] = ("bash", "unbrowser")
 
-_GRAMMAR_VERSION = "m3-v1"
+_GRAMMAR_VERSION = "m3-v2"
 _GRAMMAR_SIZE = len(_PLANNING) * len(_OBSERVATION) * len(_VERIFICATION) * len(_RECOVERY) * len(_TOOL_CAP)  # 72
+_DEFAULT_SPLIT_SEED = 20260810
+_DEFAULT_POLICY_VERSION = "2"
+_SPLIT_SCHEMA_VERSION = "m3-policy-split-v1"
 
 
 def _compute_bundle_hash(payload: str) -> str:
@@ -280,18 +288,32 @@ def _factor_levels_from_treatment(treatment: TreatmentSpec) -> dict[str, str]:
     }
 
 
-def _check_factor_coverage(
+def _vrt_from_treatment(treatment: TreatmentSpec) -> int:
+    """Encode (verification, recovery, tool_cap) as a 3-bit integer.
+
+    v=MSB, r=middle, t=LSB.  0 = submit_directly / fail_fast / lean.
+    """
+    levels = _factor_levels_from_treatment(treatment)
+    v = 0 if levels["verification"] == "submit_directly" else 1
+    r = 0 if levels["recovery"] == "fail_fast" else 1
+    t = 0 if levels["tool_cap"] == "lean" else 1
+    return (v << 2) | (r << 1) | t
+
+
+def _vrt_counts(
+    vrt_indices: list[int],
     treatments: list[TreatmentSpec],
-    factors: list[str],
-    required_per_level: dict[tuple[str, str], int],
-) -> dict[str, dict[str, int]]:
-    """Count factor level occurrences in a treatment list."""
-    counts: dict[str, dict[str, int]] = {f: {} for f in factors}
-    for t in treatments:
-        levels = _factor_levels_from_treatment(t)
-        for f in factors:
-            level = levels[f]
-            counts[f][level] = counts[f].get(level, 0) + 1
+) -> dict[str, dict[int, int]]:
+    """Count v=0, v=1, r=0, r=1, t=0, t=1 across a list of treatment indices."""
+    counts: dict[str, dict[int, int]] = {"v": {0: 0, 1: 0}, "r": {0: 0, 1: 0}, "t": {0: 0, 1: 0}}
+    for idx in vrt_indices:
+        vrt = _vrt_from_treatment(treatments[idx])
+        v = (vrt >> 2) & 1
+        r = (vrt >> 1) & 1
+        t_ = vrt & 1
+        counts["v"][v] += 1
+        counts["r"][r] += 1
+        counts["t"][t_] += 1
     return counts
 
 
@@ -303,13 +325,18 @@ def split_policies(
 
     Split: 48 meta-train, 12 development, 12 final.
 
-    Constraints:
+    Uses a deterministic combinatorial construction that guarantees:
     - Every factor level represented in meta-train.
-    - Each holdout balanced: 4 per three-level factor, 6 per binary factor.
-    - Deterministic given seed.
+    - Each holdout exactly balanced: 4 per three-level factor, 6 per binary factor.
+    - No overlaps between splits.
+    - Deterministic for a given seed; different seeds generally differ.
 
-    Raises ``ValueError`` if the treatment list is not 72 entries or if
-    factor coverage cannot be satisfied.
+    Algorithm: partition the 72 treatments into 9 buckets (planning x observation),
+    each with 8 (verification x recovery x tool_cap) combos.  For each bucket,
+    assign a precomputed balanced selection of combos to dev and final using
+    a 3x3 diagonal pattern.  The remaining combos go to meta-train.
+
+    Raises ``ValueError`` if the treatment list is not 72 entries.
     """
     if len(treatments) != _GRAMMAR_SIZE:
         raise ValueError(
@@ -317,115 +344,227 @@ def split_policies(
             f"got {len(treatments)}"
         )
 
-    factors = ["planning", "observation", "verification", "recovery", "tool_cap"]
-    factor_arity = {
-        "planning": 3, "observation": 3,
-        "verification": 2, "recovery": 2, "tool_cap": 2,
-    }
+    # --- level-name to index mapping -----------------------------------------
+    planning_levels = [p[0] for p in _PLANNING]
+    obs_levels = [o[0] for o in _OBSERVATION]
 
+    # --- bucket treatments by (planning_idx, observation_idx) ----------------
+    # buckets[(p_idx, o_idx)] = list of (treatment_index, vrt_code)
+    buckets: dict[tuple[int, int], list[tuple[int, int]]] = {}
+    for idx, t in enumerate(treatments):
+        levels = _factor_levels_from_treatment(t)
+        p_idx = planning_levels.index(levels["planning"])
+        o_idx = obs_levels.index(levels["observation"])
+        vrt = _vrt_from_treatment(t)
+        buckets.setdefault((p_idx, o_idx), []).append((idx, vrt))
+
+    # --- deterministic seed-based ordering -----------------------------------
     rng = random.Random(seed)
-    indices = list(range(len(treatments)))
-    rng.shuffle(indices)
+    for bucket_list in buckets.values():
+        rng.shuffle(bucket_list)
 
-    # Greedy meta-train: ensure every factor level is covered.
-    meta_train_idx: set[int] = set()
-    covered: set[tuple[str, str]] = set()
-    for idx in indices:
-        if len(meta_train_idx) >= 48:
-            break
-        t = treatments[idx]
+    # Pick a diagonal pattern (permutation of obs indices for each planning row).
+    patterns = list(itertools.permutations(range(3)))
+    rng.shuffle(patterns)
+    dev_pattern = patterns[0]
+    # Use the same pattern for final to guarantee complementary disjointness.
+    # (Different patterns would require a more complex non-conflicting search.)
+
+    # --- precomputed balanced (v,r,t) assignments ----------------------------
+    # dev: 3 diagonal buckets pick 2 combos each; 6 off-diagonal pick 1 each.
+    _DIAG_DEV = [{0b000, 0b111}, {0b001, 0b110}, {0b010, 0b101}]
+    _DIAG_FINAL = [{0b001, 0b110}, {0b010, 0b101}, {0b000, 0b111}]
+    _OFF_DEV = [0b011, 0b100, 0b111, 0b000, 0b110, 0b001]
+    _OFF_FINAL = [0b100, 0b011, 0b000, 0b111, 0b001, 0b110]
+
+    diag_pairs = [(p, dev_pattern[p]) for p in range(3)]
+    off_pairs = [(p, o) for p in range(3) for o in range(3) if o != dev_pattern[p]]
+
+    dev_indices: list[int] = []
+    final_indices: list[int] = []
+
+    # Diagonal buckets: 2 for dev, 2 for final from each (8 total per bucket).
+    for slot, (p, o) in enumerate(diag_pairs):
+        bucket = buckets[(p, o)]
+        dev_vrts = set(_DIAG_DEV[slot])
+        fin_vrts = set(_DIAG_FINAL[slot])
+        for idx, vrt in bucket:
+            if vrt in dev_vrts:
+                dev_indices.append(idx)
+                dev_vrts.discard(vrt)
+            elif vrt in fin_vrts:
+                final_indices.append(idx)
+                fin_vrts.discard(vrt)
+        if dev_vrts or fin_vrts:
+            raise RuntimeError(
+                f"bucket ({p},{o}) missing expected vrt combos: "
+                f"dev_missing={sorted(dev_vrts)}, final_missing={sorted(fin_vrts)}"
+            )
+
+    # Off-diagonal buckets: 1 for dev, 1 for final from each.
+    for slot, (p, o) in enumerate(off_pairs):
+        bucket = buckets[(p, o)]
+        dev_target = _OFF_DEV[slot]
+        fin_target = _OFF_FINAL[slot]
+        dev_found = False
+        fin_found = False
+        for idx, vrt in bucket:
+            if not dev_found and vrt == dev_target:
+                dev_indices.append(idx)
+                dev_found = True
+            elif not fin_found and vrt == fin_target:
+                final_indices.append(idx)
+                fin_found = True
+        if not dev_found or not fin_found:
+            raise RuntimeError(
+                f"bucket ({p},{o}) missing off-diagonal vrt combo: "
+                f"dev_target={dev_target}, fin_target={fin_target}"
+            )
+
+    # --- build meta-train from the remaining 48 indices ----------------------
+    used = set(dev_indices) | set(final_indices)
+    all_idx = set(range(len(treatments)))
+    meta_indices = sorted(all_idx - used)
+
+    # --- verify constraints --------------------------------------------------
+    if len(dev_indices) != 12:
+        raise RuntimeError(f"dev size {len(dev_indices)} != 12")
+    if len(final_indices) != 12:
+        raise RuntimeError(f"final size {len(final_indices)} != 12")
+    if len(meta_indices) != 48:
+        raise RuntimeError(f"meta-train size {len(meta_indices)} != 48")
+    if len(set(dev_indices) & set(final_indices)) != 0:
+        raise RuntimeError("dev and final have overlapping treatments")
+    if len(set(dev_indices) & set(meta_indices)) != 0:
+        raise RuntimeError("dev and meta-train have overlapping treatments")
+    if len(set(final_indices) & set(meta_indices)) != 0:
+        raise RuntimeError("final and meta-train have overlapping treatments")
+
+    # Verify exact factor balance in each holdout.
+    for name, indices in [("dev", dev_indices), ("final", final_indices)]:
+        counts = _vrt_counts(indices, treatments)
+        for dim, expected in [("v", 6), ("r", 6), ("t", 6)]:
+            for level in (0, 1):
+                actual = counts[dim][level]
+                if actual != expected:
+                    raise RuntimeError(
+                        f"{name} {dim}={level}: count={actual}, expected={expected}"
+                    )
+
+    # planning / observation balance (4 each).
+    for name, indices in [("dev", dev_indices), ("final", final_indices)]:
+        p_counts: dict[str, int] = {}
+        o_counts: dict[str, int] = {}
+        for idx in indices:
+            levels = _factor_levels_from_treatment(treatments[idx])
+            p_counts[levels["planning"]] = p_counts.get(levels["planning"], 0) + 1
+            o_counts[levels["observation"]] = o_counts.get(levels["observation"], 0) + 1
+        for dim_name, counts_dict in [("planning", p_counts), ("observation", o_counts)]:
+            for level in counts_dict:
+                if counts_dict[level] != 4:
+                    raise RuntimeError(
+                        f"{name} {dim_name}={level}: count={counts_dict[level]}, expected=4"
+                    )
+
+    # Meta-train must cover all factor levels.
+    meta_levels: dict[str, set[str]] = {}
+    for idx in meta_indices:
+        levels = _factor_levels_from_treatment(treatments[idx])
+        for f in ("planning", "observation", "verification", "recovery", "tool_cap"):
+            meta_levels.setdefault(f, set()).add(levels[f])
+    all_levels: dict[str, set[str]] = {}
+    for t in treatments:
         levels = _factor_levels_from_treatment(t)
-        for f in factors:
-            covered.add((f, levels[f]))
-        meta_train_idx.add(idx)
+        for f in ("planning", "observation", "verification", "recovery", "tool_cap"):
+            all_levels.setdefault(f, set()).add(levels[f])
+    for f in all_levels:
+        if meta_levels.get(f, set()) != all_levels[f]:
+            raise RuntimeError(f"meta-train missing factor levels for {f}: "
+                               f"have {sorted(meta_levels.get(f, set()))}, "
+                               f"need {sorted(all_levels[f])}")
 
-    # If coverage incomplete after 48, it's a bug in the grammar definition.
-    all_levels: set[tuple[str, str]] = set()
-    for f in factors:
-        for level in set(
-            _factor_levels_from_treatment(t)[f] for t in treatments
-        ):
-            all_levels.add((f, level))
-    if not covered >= all_levels:
-        raise RuntimeError(
-            f"factor coverage not satisfied after greedy meta-train selection: "
-            f"covered {len(covered)}/{len(all_levels)}"
-        )
-
-    # Fill to exactly 48 meta-train.
-    for idx in indices:
-        if len(meta_train_idx) >= 48:
-            break
-        if idx not in meta_train_idx:
-            meta_train_idx.add(idx)
-
-    remaining = [i for i in indices if i not in meta_train_idx]
-
-    # Split remaining 24 into 12 dev + 12 final with balanced coverage.
-    dev_idx: set[int] = set()
-    final_idx: set[int] = set()
-
-    # Greedy: alternate dev/final, trying to maintain balance.
-    dev_counts: dict[str, dict[str, int]] = {f: {} for f in factors}
-    final_counts: dict[str, dict[str, int]] = {f: {} for f in factors}
-
-    for i in remaining:
-        t = treatments[i]
-        levels = _factor_levels_from_treatment(t)
-
-        # Compute which side would improve balance more.
-        def _imbalance(counts: dict[str, dict[str, int]]) -> float:
-            score = 0.0
-            for f in factors:
-                target = factor_arity[f]
-                for level in set(
-                    _factor_levels_from_treatment(tt)[f] for tt in treatments
-                ):
-                    current = counts[f].get(level, 0)
-                    score += (current / max(1, sum(counts[f].values()))) if sum(counts[f].values()) else 0
-                # Perfect balance for arity A means each level has 12*arity/A
-                # For 12 policies: 3-level -> 4 each, 2-level -> 6 each.
-                target_each = 12 // target
-                for level in set(
-                    _factor_levels_from_treatment(tt)[f] for tt in treatments
-                ):
-                    current = counts[f].get(level, 0)
-                    score += abs(current - target_each)
-            return score
-
-        dev_imbalance_before = _imbalance(dev_counts)
-        final_imbalance_before = _imbalance(final_counts)
-
-        # Prefer adding to the side with more capacity and less imbalance.
-        if len(dev_idx) < 12 and len(final_idx) < 12:
-            if dev_imbalance_before <= final_imbalance_before:
-                dev_idx.add(i)
-                for f in factors:
-                    dev_counts[f][levels[f]] = dev_counts[f].get(levels[f], 0) + 1
-            else:
-                final_idx.add(i)
-                for f in factors:
-                    final_counts[f][levels[f]] = final_counts[f].get(levels[f], 0) + 1
-        elif len(dev_idx) < 12:
-            dev_idx.add(i)
-            for f in factors:
-                dev_counts[f][levels[f]] = dev_counts[f].get(levels[f], 0) + 1
-        elif len(final_idx) < 12:
-            final_idx.add(i)
-            for f in factors:
-                final_counts[f][levels[f]] = final_counts[f].get(levels[f], 0) + 1
-
-    if len(dev_idx) != 12 or len(final_idx) != 12 or len(meta_train_idx) != 48:
-        raise RuntimeError(
-            f"split sizes incorrect: meta_train={len(meta_train_idx)}, "
-            f"dev={len(dev_idx)}, final={len(final_idx)}"
-        )
-
-    meta_train = [treatments[i] for i in sorted(meta_train_idx)]
-    development = [treatments[i] for i in sorted(dev_idx)]
-    final_held = [treatments[i] for i in sorted(final_idx)]
+    # --- assemble output -----------------------------------------------------
+    meta_train = [treatments[i] for i in sorted(meta_indices)]
+    development = [treatments[i] for i in sorted(dev_indices)]
+    final_held = [treatments[i] for i in sorted(final_indices)]
 
     return meta_train, development, final_held
+
+
+def build_policy_split_manifest(
+    treatments: list[TreatmentSpec],
+    seed: int,
+    *,
+    registry_file: str,
+) -> dict[str, Any]:
+    """Build a hash-protected manifest for the frozen policy split."""
+    registry = TreatmentRegistry(tuple(treatments))
+    meta_train, development, final_held = split_policies(treatments, seed)
+    payload: dict[str, Any] = {
+        "schema_version": _SPLIT_SCHEMA_VERSION,
+        "grammar_name": "unbrowser_interactive",
+        "grammar_version": _GRAMMAR_VERSION,
+        "policy_version": treatments[0].version,
+        "registry_file": registry_file,
+        "registry_hash": registry.registry_hash,
+        "split_algorithm": "balanced-combinatorial-v1",
+        "split_seed": seed,
+        "splits": {
+            "meta_train": [treatment.bundle_id for treatment in meta_train],
+            "development": [treatment.bundle_id for treatment in development],
+            "final_held_out": [treatment.bundle_id for treatment in final_held],
+        },
+    }
+    canonical = json.dumps(
+        payload,
+        sort_keys=True,
+        ensure_ascii=False,
+        separators=(",", ":"),
+    )
+    return {
+        **payload,
+        "manifest_hash": hashlib.sha256(canonical.encode("utf-8")).hexdigest(),
+    }
+
+
+def _write_immutable_json(path: Path, payload: dict[str, Any]) -> None:
+    """Create a frozen JSON artifact, allowing only byte-identical reruns."""
+    content = json.dumps(payload, indent=2, sort_keys=True, ensure_ascii=False) + "\n"
+    if path.exists():
+        if path.read_text(encoding="utf-8") != content:
+            raise FileExistsError(f"refusing to overwrite frozen artifact: {path}")
+        return
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(content, encoding="utf-8")
+
+
+def freeze_policy_registry(
+    registry_path: str | Path,
+    manifest_path: str | Path,
+    *,
+    split_seed: int = _DEFAULT_SPLIT_SEED,
+    policy_version: str = _DEFAULT_POLICY_VERSION,
+) -> dict[str, Any]:
+    """Freeze the full M3 registry and deterministic split manifest."""
+    registry_file = Path(registry_path).expanduser().resolve()
+    manifest_file = Path(manifest_path).expanduser().resolve()
+    treatments = enumerate_unbrowser_grammar(version=policy_version)
+    registry = TreatmentRegistry(tuple(treatments))
+    manifest = build_policy_split_manifest(
+        treatments,
+        split_seed,
+        registry_file=registry_file.name,
+    )
+    _write_immutable_json(registry_file, registry.to_dict())
+    _write_immutable_json(manifest_file, manifest)
+    return {
+        "registry": str(registry_file),
+        "registry_hash": registry.registry_hash,
+        "manifest": str(manifest_file),
+        "manifest_hash": manifest["manifest_hash"],
+        "split_seed": split_seed,
+        "treatments": len(treatments),
+    }
 
 
 def export_grammar_factors(treatment: TreatmentSpec) -> dict[str, Any]:
@@ -492,8 +631,34 @@ __all__ = [
     "enumerate_unbrowser_grammar",
     "generate_unbrowser_treatments",
     "split_policies",
+    "build_policy_split_manifest",
+    "freeze_policy_registry",
     "export_grammar_factors",
     "grammar_factor_vector",
     "_GRAMMAR_SIZE",
     "_GRAMMAR_VERSION",
+    "_DEFAULT_SPLIT_SEED",
 ]
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(
+        description="Freeze the M3 Unbrowser treatment registry and policy split."
+    )
+    parser.add_argument("--registry", required=True)
+    parser.add_argument("--manifest", required=True)
+    parser.add_argument("--split-seed", type=int, default=_DEFAULT_SPLIT_SEED)
+    parser.add_argument("--policy-version", default=_DEFAULT_POLICY_VERSION)
+    args = parser.parse_args(argv)
+    report = freeze_policy_registry(
+        args.registry,
+        args.manifest,
+        split_seed=args.split_seed,
+        policy_version=args.policy_version,
+    )
+    print(json.dumps(report, indent=2, sort_keys=True))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

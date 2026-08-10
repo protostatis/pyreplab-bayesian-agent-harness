@@ -87,10 +87,30 @@ def _lookup(family: str) -> dict[str, Callable[..., Any]]:
 
 
 def generate_task(
-    family: str, root: str | Path, seed: int, difficulty: str = "medium"
+    family: str,
+    root: str | Path,
+    seed: int,
+    difficulty: str = "medium",
+    fixture_template: str = "single_page_extraction",
+    task_role: str | None = None,
 ) -> TaskSpec:
-    """Generate a deterministic task of ``family`` under ``root``."""
-    return _lookup(family)["generate"](root, seed, difficulty)
+    """Generate a deterministic task of ``family`` under ``root``.
+
+    ``fixture_template`` is only honoured when ``family`` is
+    ``unbrowser_fixture``; for every other family it is silently ignored.
+    """
+    generate_fn = _lookup(family)["generate"]
+    if family == "unbrowser_fixture":
+        return generate_fn(
+            root,
+            seed,
+            difficulty,
+            template=fixture_template,
+            task_role=task_role,
+        )
+    if task_role is not None:
+        raise ValueError("task_role is only supported for unbrowser_fixture")
+    return generate_fn(root, seed, difficulty)
 
 
 def verify_attempt(

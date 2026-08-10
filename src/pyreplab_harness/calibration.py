@@ -91,12 +91,15 @@ def build_calibration_context(
         policy_rows: ordered list of rows for one policy (first k are used).
         k: number of calibration rows to include (0 <= k <= len(policy_rows)).
         normalization_stats: dict with "cost_mean", "cost_std" fitted on
-            meta-training data. If None, uses identity normalization.
+            meta-training ``log1p(cost)`` values. If None, returns log1p(cost)
+            without standardization.
 
     Returns:
         dict with keys "success", "term_onehot", "cost", "mask",
         "task_feature_vectors", "k_actual".
     """
+    if k < 0:
+        raise ValueError(f"k must be nonnegative, got {k}")
     k_actual = min(k, len(policy_rows))
     if k_actual == 0:
         return {
@@ -123,8 +126,21 @@ def build_calibration_context(
         if i < len(policy_rows):
             row = policy_rows[i]
             success_list.append(1.0 if row.get("verified_success", False) else 0.0)
-            cost_val = float(row.get("cost", row.get("output_token_cost", 0.0)))
-            cost_list.append((cost_val - cost_mean) / cost_std)
+            if "cost" in row:
+                cost_val = float(row["cost"])
+                if "output_token_cost" in row and cost_val != float(
+                    row["output_token_cost"]
+                ):
+                    raise ValueError(
+                        f"calibration row {i} has conflicting cost fields"
+                    )
+            elif "output_token_cost" in row:
+                cost_val = float(row["output_token_cost"])
+            else:
+                raise ValueError(f"calibration row {i} is missing cost")
+            if not math.isfinite(cost_val) or cost_val < 0.0:
+                raise ValueError(f"calibration row {i} has invalid cost {cost_val!r}")
+            cost_list.append((math.log1p(cost_val) - cost_mean) / cost_std)
             mask_list.append(1.0)
 
             # Termination one-hot (6 classes).
@@ -133,6 +149,15 @@ def build_calibration_context(
 
             # Task features (precomputed embedding or structured features).
             task_emb = row.get("task_embedding", None)
+            if task_emb is None:
+                # Try nested M3/CNP location: model_input.task.task_embedding.vector
+                mi = row.get("model_input", {})
+                if isinstance(mi, dict):
+                    task_info = mi.get("task", {})
+                    if isinstance(task_info, dict):
+                        emb_info = task_info.get("task_embedding", {})
+                        if isinstance(emb_info, dict):
+                            task_emb = emb_info.get("vector", None)
             task_emb_list.append(task_emb)
         else:
             success_list.append(0.0)
@@ -197,20 +222,29 @@ def frozen_calibration_split(
     """
     if not tasks:
         raise ValueError("tasks list must be non-empty")
+    if not k_sizes:
+        raise ValueError("k_sizes must not be empty")
+    if any(k < 0 for k in k_sizes):
+        raise ValueError(f"k_sizes must be nonnegative: {k_sizes}")
 
     for i in range(1, len(k_sizes)):
         if k_sizes[i] < k_sizes[i - 1]:
             raise ValueError(f"k_sizes must be non-decreasing: {k_sizes}")
 
+    if len(tasks) != len(set(tasks)):
+        raise ValueError("calibration tasks must be unique")
+
+    max_k = max(k_sizes)
+    if len(tasks) < max_k:
+        raise ValueError(
+            f"need at least {max_k} unique calibration tasks, got {len(tasks)}"
+        )
+
     rng = random.Random(seed)
     ordered = list(tasks)
     rng.shuffle(ordered)
 
-    max_k = max(k_sizes)
     ordered = ordered[:max_k]
-    if len(ordered) < max_k:
-        # Pad with repeats from the shuffled list if not enough unique tasks.
-        ordered.extend(rng.choices(tasks, k=max_k - len(ordered)))
 
     result: dict[str, Any] = {"ordered_tasks": ordered, "seed": seed}
     for k in k_sizes:
@@ -254,6 +288,10 @@ def policy_task_split(
     missing = required_keys - set(ratios)
     if missing:
         raise ValueError(f"missing ratio keys: {missing}")
+    if len(tasks) != len(set(tasks)):
+        raise ValueError("tasks must be unique")
+    if len(policies) != len(set(policies)):
+        raise ValueError("policies must be unique")
 
     rng = random.Random(seed)
 
@@ -266,6 +304,16 @@ def policy_task_split(
         "task_meta_train", "task_dev_cal", "task_dev_target",
         "task_final_cal", "task_final_known", "task_final_held",
     ]
+    if n_tasks < len(task_keys):
+        raise ValueError(
+            f"need at least {len(task_keys)} tasks for non-empty task splits, "
+            f"got {n_tasks}"
+        )
+    if any(
+        not math.isfinite(float(ratios[key])) or float(ratios[key]) <= 0
+        for key in task_keys
+    ):
+        raise ValueError("task split ratios must be finite and positive")
     task_counts = {
         key: max(1, int(n_tasks * ratios[key] / sum(ratios[k] for k in task_keys)))
         for key in task_keys
@@ -277,9 +325,10 @@ def policy_task_split(
         task_counts["task_meta_train"] += n_tasks - total
     elif total > n_tasks:
         task_counts["task_meta_train"] -= total - n_tasks
-    # Floor to zero.
-    for key in task_keys:
-        task_counts[key] = max(0, task_counts[key])
+    if sum(task_counts.values()) != n_tasks or any(
+        count < 1 for count in task_counts.values()
+    ):
+        raise ValueError("task ratios cannot produce non-empty splits")
 
     task_splits: dict[str, list[str]] = {}
     offset = 0
@@ -294,6 +343,16 @@ def policy_task_split(
 
     n_policies = len(policies)
     policy_keys = ["policy_meta_train", "policy_development", "policy_final"]
+    if n_policies < len(policy_keys):
+        raise ValueError(
+            f"need at least {len(policy_keys)} policies for non-empty policy splits, "
+            f"got {n_policies}"
+        )
+    if any(
+        not math.isfinite(float(ratios[key])) or float(ratios[key]) <= 0
+        for key in policy_keys
+    ):
+        raise ValueError("policy split ratios must be finite and positive")
     policy_counts = {
         key: max(1, int(n_policies * ratios[key] / sum(ratios[k] for k in policy_keys)))
         for key in policy_keys
@@ -303,8 +362,10 @@ def policy_task_split(
         policy_counts["policy_meta_train"] += n_policies - total_p
     elif total_p > n_policies:
         policy_counts["policy_meta_train"] -= total_p - n_policies
-    for key in policy_keys:
-        policy_counts[key] = max(0, policy_counts[key])
+    if sum(policy_counts.values()) != n_policies or any(
+        count < 1 for count in policy_counts.values()
+    ):
+        raise ValueError("policy ratios cannot produce non-empty splits")
 
     policy_splits: dict[str, list[str]] = {}
     offset_p = 0
@@ -313,14 +374,19 @@ def policy_task_split(
         policy_splits[key] = shuffled_policies[offset_p : offset_p + count]
         offset_p += count
 
-    # Verify no overlap.
-    all_tasks = []
+    # Verify every unique input was assigned exactly once.
+    all_tasks: list[str] = []
     for key in task_keys:
         all_tasks.extend(task_splits.get(key, []))
-    for key in policy_keys:
-        if key in policy_splits:
-            assert len(policy_splits[key]) == len(set(policy_splits[key])), \
-                f"duplicate in {key}"
+    all_policies = [
+        policy
+        for key in policy_keys
+        for policy in policy_splits.get(key, [])
+    ]
+    if len(all_tasks) != n_tasks or len(set(all_tasks)) != n_tasks:
+        raise RuntimeError("task split assignment is incomplete or overlapping")
+    if len(all_policies) != n_policies or len(set(all_policies)) != n_policies:
+        raise RuntimeError("policy split assignment is incomplete or overlapping")
 
     return {
         "tasks": task_splits,
@@ -338,18 +404,36 @@ def policy_task_split(
 def fit_normalization_stats(
     rows: list[dict[str, Any]],
 ) -> dict[str, Any]:
-    """Fit cost normalization statistics on meta-training data only.
+    """Fit log-cost normalization statistics on meta-training data only.
 
-    Returns dict with "cost_mean", "cost_std", "n_rows".
+    ``cost_mean`` and ``cost_std`` describe ``log1p(raw_cost)``. Returns a
+    ``cost_transform`` marker so callers cannot mistake them for raw-cost
+    moments.
     """
     cost_values: list[float] = []
-    for row in rows:
-        cost = float(row.get("cost", row.get("output_token_cost", 0.0)))
-        if math.isfinite(cost):
-            cost_values.append(cost)
+    for row_index, row in enumerate(rows):
+        if "cost" in row:
+            cost = float(row["cost"])
+            if "output_token_cost" in row and cost != float(
+                row["output_token_cost"]
+            ):
+                raise ValueError(
+                    f"normalization row {row_index} has conflicting cost fields"
+                )
+        elif "output_token_cost" in row:
+            cost = float(row["output_token_cost"])
+        else:
+            continue
+        if math.isfinite(cost) and cost >= 0.0:
+            cost_values.append(math.log1p(cost))
 
     if not cost_values:
-        return {"cost_mean": 0.0, "cost_std": 1.0, "n_rows": 0}
+        return {
+            "cost_mean": 0.0,
+            "cost_std": 1.0,
+            "cost_transform": "log1p_zscore",
+            "n_rows": 0,
+        }
 
     n = len(cost_values)
     mean = sum(cost_values) / n
@@ -359,7 +443,12 @@ def fit_normalization_stats(
         variance = 0.0
     std = math.sqrt(variance) if variance > 0 else 1.0
 
-    return {"cost_mean": mean, "cost_std": std, "n_rows": n}
+    return {
+        "cost_mean": mean,
+        "cost_std": std,
+        "cost_transform": "log1p_zscore",
+        "n_rows": n,
+    }
 
 
 __all__ = [

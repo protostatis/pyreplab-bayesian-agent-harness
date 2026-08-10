@@ -11,8 +11,11 @@ from pyreplab_harness.orchestrator import (
     UNBROWSER_TOOL_INTERFACE,
     RemoteConfig,
     _pair_order,
+    _parse_sampling_receipt,
+    _run_attempt,
     _run_pi,
     _run_policy_set,
+    _task_json,
     _unbrowser_url_for_task,
     build_parser,
     policy_spec,
@@ -83,6 +86,13 @@ class PolicyVersionTest(unittest.TestCase):
         args = build_parser().parse_args(["--policy-version", "4"])
         self.assertEqual(args.policy_version, "4")
 
+    def test_parser_accepts_canary_role_and_sampling_seed(self) -> None:
+        args = build_parser().parse_args(
+            ["--task-role", "T_canary", "--sampling-seed", "1900000001"]
+        )
+        self.assertEqual(args.task_role, "T_canary")
+        self.assertEqual(args.sampling_seed, 1900000001)
+
     def test_remote_paths_must_be_explicit_and_absolute(self) -> None:
         with self.assertRaisesRegex(ValueError, "explicit absolute remote path"):
             validate_remote_config(RemoteConfig("host", "", ""))
@@ -113,6 +123,38 @@ class PolicyVersionTest(unittest.TestCase):
         self.assertEqual(command[command.index("--provider") + 1], "custom-provider")
         self.assertEqual(command[command.index("--model") + 1], "custom-model")
         self.assertNotIn("model-switch.ts", " ".join(command))
+
+    def test_sampling_seed_reaches_gym_extension(self) -> None:
+        policy = policy_spec(PROJECT_ROOT, "direct", "1")
+        completed = mock.Mock(returncode=0, stdout="", stderr="")
+        with mock.patch(
+            "pyreplab_harness.orchestrator.subprocess.run", return_value=completed
+        ) as runner:
+            _run_pi(
+                PROJECT_ROOT,
+                RemoteConfig("host", "/project", "/runs"),
+                "/runs/workspace",
+                "task prompt",
+                policy,
+                "pi",
+                None,
+                sampling_seed=2026082001,
+            )
+        command = runner.call_args.args[0]
+        self.assertEqual(
+            command[command.index("--gym-sampling-seed") + 1],
+            "2026082001",
+        )
+
+    def test_sampling_receipt_parser_keeps_only_sanitized_marker(self) -> None:
+        receipt = _parse_sampling_receipt(
+            "diagnostic\n"
+            'PYREPLAB_SAMPLING_V1 {"seed":7,"parameters":{"temperature":0.8}}\n'
+        )
+        self.assertEqual(
+            receipt,
+            {"seed": 7, "parameters": {"temperature": 0.8}},
+        )
 
 
 class GeneralizedTreatmentOrchestratorTest(unittest.TestCase):
@@ -471,6 +513,85 @@ class GeneralizedTreatmentOrchestratorTest(unittest.TestCase):
         self.assertEqual(set(result["attempts"]), set(policies))
         self.assertEqual(result["treatment_registry_hash"], "registry-hash")
 
+    def test_policy_set_can_preserve_preregistered_order(self) -> None:
+        treatments = generate_treatments(3, seed=21)
+        policies = {
+            treatment.bundle_id: policy_spec_from_treatment(treatment)
+            for treatment in treatments
+        }
+        args = argparse.Namespace(
+            seed=3,
+            family="artifact",
+            preserve_treatment_order=True,
+        )
+        config = RemoteConfig("host", "/project", "/runs")
+
+        with mock.patch(
+            "pyreplab_harness.orchestrator._task_json",
+            return_value={"id": "artifact-task-3", "prompt": "task"},
+        ), mock.patch(
+            "pyreplab_harness.orchestrator._run_attempt",
+            return_value={
+                "attempt_id": "a",
+                "policy": {},
+                "pi_return_code": 0,
+                "pi_stderr": "",
+                "verification": {"success": True},
+            },
+        ):
+            result = _run_policy_set(
+                PROJECT_ROOT,
+                config,
+                args,
+                policies,
+                mode="treatment_set",
+            )
+        self.assertEqual(result["execution_order"], list(policies))
+
+    def test_empty_pi_stdout_is_still_recorded_and_verified(self) -> None:
+        treatment = generate_treatments(1, seed=22)[0]
+        policy = policy_spec_from_treatment(treatment)
+        config = RemoteConfig("host", "/project", "/runs")
+        task = {
+            "id": "artifact-task-5",
+            "family": "artifact",
+            "prompt": "Do the task",
+            "public_metadata": {},
+        }
+
+        def fake_remote(_config, arguments, **kwargs):
+            if arguments[0] == "prepare-attempt":
+                return {"workspace_ref": "/runs/attempts/a/workspace"}
+            if arguments[0] == "record-events":
+                return {"recorded": 0}
+            if arguments[0] == "verify":
+                return {"success": False, "failure_code": "missing_output"}
+            if arguments[0] == "inspect-attempt":
+                return {"status": "verified"}
+            self.fail(f"unexpected remote command: {arguments}")
+
+        completed = mock.Mock(returncode=0, stdout="", stderr="")
+        with mock.patch(
+            "pyreplab_harness.orchestrator.remote_json", side_effect=fake_remote
+        ) as remote, mock.patch(
+            "pyreplab_harness.orchestrator._run_pi_checked", return_value=completed
+        ):
+            result = _run_attempt(
+                PROJECT_ROOT,
+                config,
+                task,
+                policy,
+                "attempt-empty-output",
+                build_parser().parse_args(["--family", "artifact"]),
+                with_usage=False,
+            )
+
+        record_call = next(
+            call for call in remote.call_args_list if call.args[1][0] == "record-events"
+        )
+        self.assertEqual(record_call.kwargs["input_text"], "")
+        self.assertEqual(result["verification"]["failure_code"], "missing_output")
+
 
 class UnbrowserFixtureOrchestratorTest(unittest.TestCase):
     """Tests for the unbrowser_fixture family in the orchestrator."""
@@ -618,6 +739,95 @@ class UnbrowserFixtureOrchestratorTest(unittest.TestCase):
     def test_fixture_family_parser_accepts_family(self) -> None:
         args = build_parser().parse_args(["--family", "unbrowser_fixture"])
         self.assertEqual(args.family, "unbrowser_fixture")
+
+    def test_task_json_includes_fixture_template_for_unbrowser_fixture(self) -> None:
+        """_task_json adds --fixture-template only for unbrowser_fixture."""
+        config = RemoteConfig("host", "/project", "/runs")
+        fixture_args = argparse.Namespace(
+            family="unbrowser_fixture", seed=7, difficulty="medium",
+            fixture_template="table_filter_sort",
+        )
+        with mock.patch(
+            "pyreplab_harness.orchestrator.remote_json",
+            return_value={"id": "task-1"},
+        ) as remote:
+            _task_json(config, fixture_args)
+        arguments = remote.call_args.args[1]
+        self.assertIn("--fixture-template", arguments)
+        self.assertIn("table_filter_sort", arguments)
+
+    def test_task_json_includes_frozen_fixture_role(self) -> None:
+        config = RemoteConfig("host", "/project", "/runs")
+        fixture_args = argparse.Namespace(
+            family="unbrowser_fixture",
+            seed=7,
+            difficulty="medium",
+            fixture_template="table_filter_sort",
+            task_role="T_pilot",
+        )
+        with mock.patch(
+            "pyreplab_harness.orchestrator.remote_json",
+            return_value={"id": "task-1"},
+        ) as remote:
+            _task_json(config, fixture_args)
+        arguments = remote.call_args.args[1]
+        self.assertEqual(arguments[arguments.index("--task-role") + 1], "T_pilot")
+
+    def test_task_json_omits_fixture_template_for_non_fixture(self) -> None:
+        """_task_json does NOT add --fixture-template for non-fixture families."""
+        config = RemoteConfig("host", "/project", "/runs")
+        artifact_args = argparse.Namespace(
+            family="artifact", seed=7, difficulty="medium",
+            fixture_template="table_filter_sort",
+        )
+        with mock.patch(
+            "pyreplab_harness.orchestrator.remote_json",
+            return_value={"id": "task-1"},
+        ) as remote:
+            _task_json(config, artifact_args)
+        arguments = remote.call_args.args[1]
+        self.assertNotIn("--fixture-template", arguments)
+
+    def test_custom_unbrowser_binary_reaches_runner_args(self) -> None:
+        """Custom --unbrowser-binary is forwarded from args to _run_pi."""
+        treatment = TreatmentSpec(
+            id="unbrowser-correct",
+            version="1",
+            system_prompt="Use Unbrowser.",
+            allowed_tools=("bash", "unbrowser"),
+            max_output_tokens=512,
+            tool_call_limit=4,
+            command_timeout_seconds=20,
+            wall_time_limit_seconds=60,
+            tool_interface=UNBROWSER_TOOL_INTERFACE,
+        )
+        completed = mock.Mock(returncode=0, stdout="", stderr="")
+        with mock.patch(
+            "pyreplab_harness.orchestrator.subprocess.run", return_value=completed
+        ) as runner:
+            _run_pi(
+                PROJECT_ROOT,
+                RemoteConfig("host", "/project", "/runs"),
+                "/runs/workspace",
+                "task prompt",
+                policy_spec_from_treatment(treatment),
+                "pi",
+                None,
+                unbrowser_url=UNBROWSER_SMOKE_URL,
+                unbrowser_binary="/opt/custom-unbrowser",
+            )
+        command = runner.call_args.args[0]
+        self.assertEqual(
+            command[command.index("--gym-unbrowser-binary") + 1],
+            "/opt/custom-unbrowser",
+        )
+
+    def test_orchestrator_parser_accepts_fixture_template(self) -> None:
+        """--fixture-template is accepted by the orchestrator parser."""
+        args = build_parser().parse_args(
+            ["--fixture-template", "multi_page_navigation"]
+        )
+        self.assertEqual(args.fixture_template, "multi_page_navigation")
 
 
 if __name__ == "__main__":

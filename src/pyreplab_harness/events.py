@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from typing import Any, Iterable
 
 
@@ -10,7 +11,22 @@ def _contains_tool_limit_rejection(value: Any) -> bool:
         payload = json.dumps(value, sort_keys=True, ensure_ascii=False)
     except (TypeError, ValueError):
         payload = str(value)
-    return "Tool call limit reached" in payload
+    lowered = payload.casefold()
+    return "tool call limit" in lowered or "unbrowser call limit" in lowered
+
+
+def _planning_preamble_shape(text: str) -> dict[str, Any]:
+    """Return marker/count features without retaining model-authored text."""
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    return {
+        "present": bool(text.strip()),
+        "line_count": len(lines),
+        "character_count": len(text),
+        "plan_marker": any(line.upper().startswith("PLAN:") for line in lines),
+        "step_marker_count": len(
+            re.findall(r"(?im)^\s*STEP\s+\d+\s*:", text)
+        ),
+    }
 
 
 def normalize_pi_events(lines: str | Iterable[str]) -> dict[str, Any]:
@@ -31,6 +47,8 @@ def normalize_pi_events(lines: str | Iterable[str]) -> dict[str, Any]:
     model: str | None = None
     stop_reasons: dict[str, int] = {}
     tool_limit_rejection_count = 0
+    pre_tool_text: list[str] = []
+    tool_requested = False
 
     for line_number, line in enumerate(iterable, start=1):
         if not line.strip():
@@ -64,6 +82,16 @@ def normalize_pi_events(lines: str | Iterable[str]) -> dict[str, Any]:
             stop_reason = message.get("stopReason")
             if isinstance(stop_reason, str) and stop_reason:
                 stop_reasons[stop_reason] = stop_reasons.get(stop_reason, 0) + 1
+            for item in message.get("content", []):
+                if not isinstance(item, dict):
+                    continue
+                item_type = item.get("type")
+                if item_type in {"toolCall", "tool_use", "tool-call"}:
+                    tool_requested = True
+                elif item_type == "text" and not tool_requested:
+                    text = item.get("text")
+                    if isinstance(text, str) and text:
+                        pre_tool_text.append(text)
             texts = [
                 item.get("text", "")
                 for item in message.get("content", [])
@@ -72,7 +100,8 @@ def normalize_pi_events(lines: str | Iterable[str]) -> dict[str, Any]:
             if texts:
                 final_text = "\n".join(texts)
         elif event_type == "tool_execution_end":
-            if _contains_tool_limit_rejection(event.get("result")):
+            budget_rejected = _contains_tool_limit_rejection(event.get("result"))
+            if budget_rejected:
                 tool_limit_rejection_count += 1
             tool_executions.append(
                 {
@@ -80,6 +109,7 @@ def normalize_pi_events(lines: str | Iterable[str]) -> dict[str, Any]:
                     "tool_name": event.get("toolName"),
                     "result": event.get("result"),
                     "is_error": event.get("isError", False),
+                    "budget_rejected": budget_rejected,
                 }
             )
 
@@ -95,5 +125,6 @@ def normalize_pi_events(lines: str | Iterable[str]) -> dict[str, Any]:
         "tool_limit_rejection_count": tool_limit_rejection_count,
         "length_stop_count": stop_reasons.get("length", 0),
         "stop_reasons": dict(sorted(stop_reasons.items())),
+        "planning_preamble": _planning_preamble_shape("\n".join(pre_tool_text)),
         "final_text": final_text,
     }

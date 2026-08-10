@@ -179,6 +179,14 @@ class FixtureServerTest(unittest.TestCase):
         # Could be results or "no items" — both are valid 200 responses
         self.assertIn("Search Results", body)
 
+    def test_recovery_probe_returns_non_200(self) -> None:
+        url = self._server.url_for_page(
+            "distractor_recovery", 42, "medium", "page_0"
+        )
+        code, body = self._get(url)
+        self.assertEqual(code, 503)
+        self.assertIn("Error", body)
+
     # ------------------------------------------------------------------
     # Form validation (template 5)
     # ------------------------------------------------------------------
@@ -287,12 +295,16 @@ class FixtureServerTest(unittest.TestCase):
         # stateful_workflow
         if template == "stateful_workflow":
             correct_path = oracle.get("correct_path", [])
+            state_tokens = oracle.get("state_tokens", [])
             ns = oracle.get("num_steps", 3)
-            if correct_path:
+            if correct_path and len(state_tokens) == ns:
                 last = ns - 1
+                params = urllib.parse.urlencode(
+                    {"choice": correct_path[-1], "state": state_tokens[-1]}
+                )
                 return [(
                     f"{self._server.url_for(template, seed, difficulty)}"
-                    f"/step/{last}?choice={correct_path[-1]}"
+                    f"/step/{last}?{params}"
                 )]
 
         # distractor_recovery

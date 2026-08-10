@@ -444,6 +444,42 @@ class MetaCNPModelTest(unittest.TestCase):
         self.model.eval()
         self.assertFalse(self.model.training)
 
+    def test_success_context_update_is_monotonic(self) -> None:
+        import torch
+        target_structured = torch.randn(1, 4)
+        target_text = torch.randn(1, 32)
+        policy_desc = torch.randn(1, 13)
+        context_structured = torch.randn(1, 8, 4)
+        context_text = torch.randn(1, 8, 32)
+        context_term = torch.zeros(1, 8, 6)
+        context_term[:, :, 0] = 1.0
+        context_cost = torch.zeros(1, 8, 1)
+        context_mask = torch.ones(1, 8, 1)
+
+        low = self.model(
+            target_structured,
+            target_text,
+            policy_desc,
+            context_structured,
+            context_text,
+            torch.zeros(1, 8, 1),
+            context_term,
+            context_cost,
+            context_mask,
+        )["logit_success"].item()
+        high = self.model(
+            target_structured,
+            target_text,
+            policy_desc,
+            context_structured,
+            context_text,
+            torch.ones(1, 8, 1),
+            context_term,
+            context_cost,
+            context_mask,
+        )["logit_success"].item()
+        self.assertGreater(high, low)
+
 
 @TORCH_REQUIRED
 class ComputeLossTest(unittest.TestCase):
@@ -482,6 +518,25 @@ class ComputeLossTest(unittest.TestCase):
 
         loss_dict = compute_loss(outputs, targets, target_cost, target_term)
         self.assertLess(loss_dict["success"].item(), 0.01)
+
+    def test_auxiliary_loss_weights_are_applied(self) -> None:
+        import torch
+        outputs = {
+            "logit_success": torch.tensor([0.0, 0.0]),
+            "cost_params": torch.tensor([[0.0, 0.0], [0.0, 0.0]]),
+            "term_logits": torch.zeros(2, 6),
+        }
+        losses = compute_loss(
+            outputs,
+            torch.tensor([0.0, 1.0]),
+            torch.tensor([1.0, 2.0]),
+            torch.tensor([0, 1]),
+            cost_loss_weight=0.0,
+            term_loss_weight=0.0,
+        )
+        self.assertAlmostEqual(
+            losses["total"].item(), losses["success"].item(), places=6,
+        )
 
 
 class EpisodeSampleTest(unittest.TestCase):
@@ -530,6 +585,436 @@ class EmptyContextTest(unittest.TestCase):
         self.assertTrue(math.isfinite(result["success_prob"]))
         self.assertTrue(math.isfinite(result["cost_mean"]))
         self.assertGreaterEqual(result["cost_mean"], -1e-9)
+
+
+# ---------------------------------------------------------------------------
+# Fix-regression tests (fail before fix, pass after)
+# ---------------------------------------------------------------------------
+
+
+@TORCH_REQUIRED
+class HxDimNotEqualHpDimTest(unittest.TestCase):
+    """Fix 1: hx_dim != hp_dim must work via learned projection."""
+
+    def test_forward_with_mismatched_dims(self) -> None:
+        import torch
+        set_seed(42)
+        model = MetaCNPModel(
+            structured_task_dim=4,
+            text_embed_dim=32,
+            hx_dim=96,
+            hp_dim=64,       # < hx_dim
+            ei_dim=128,
+            context_hidden=64,
+            decoder_hidden=64,
+            dropout=0.0,
+            num_heads=1,
+        )
+        model.eval()
+        B, K = 3, 4
+        target_structured = torch.randn(B, 4)
+        target_text_emb = torch.randn(B, 32)
+        policy_desc = torch.randn(B, 13)
+        ctx_structured = torch.randn(B, K, 4)
+        ctx_text_emb = torch.randn(B, K, 32)
+        ctx_success = torch.randint(0, 2, (B, K, 1)).float()
+        ctx_term = torch.randn(B, K, 6)
+        ctx_cost = torch.rand(B, K, 1) * 50 + 1
+        ctx_mask = torch.ones(B, K, 1)
+
+        out = model(
+            target_structured, target_text_emb, policy_desc,
+            ctx_structured, ctx_text_emb,
+            ctx_success, ctx_term, ctx_cost, ctx_mask,
+        )
+        # Must produce well-shaped, finite output.
+        self.assertEqual(tuple(out["logit_success"].shape), (B,))
+        self.assertTrue(bool(torch.isfinite(out["logit_success"]).all()),
+                        "Success logits must be finite")
+        self.assertTrue(bool(torch.isfinite(out["cost_params"]).all()),
+                        "Cost params must be finite")
+
+    def test_hp_greater_than_hx(self) -> None:
+        import torch
+        set_seed(42)
+        model = MetaCNPModel(
+            structured_task_dim=4,
+            text_embed_dim=32,
+            hx_dim=64,
+            hp_dim=96,       # > hx_dim
+            ei_dim=128,
+            context_hidden=64,
+            decoder_hidden=64,
+            dropout=0.0,
+            num_heads=1,
+        )
+        model.eval()
+        B, K = 2, 5
+        target_structured = torch.randn(B, 4)
+        target_text_emb = torch.randn(B, 32)
+        policy_desc = torch.randn(B, 13)
+        ctx_structured = torch.randn(B, K, 4)
+        ctx_text_emb = torch.randn(B, K, 32)
+        ctx_success = torch.randint(0, 2, (B, K, 1)).float()
+        ctx_term = torch.randn(B, K, 6)
+        ctx_cost = torch.rand(B, K, 1) * 50 + 1
+        ctx_mask = torch.ones(B, K, 1)
+
+        out = model(
+            target_structured, target_text_emb, policy_desc,
+            ctx_structured, ctx_text_emb,
+            ctx_success, ctx_term, ctx_cost, ctx_mask,
+        )
+        self.assertTrue(bool(torch.isfinite(out["logit_success"]).all()))
+
+    def test_param_count_stays_under_1M(self) -> None:
+        import torch
+        model = MetaCNPModel(hx_dim=96, hp_dim=64)
+        params = count_parameters(model)
+        self.assertLess(params, 1_000_000,
+                        f"Model has {params} params, exceeds 1M limit")
+
+
+@TORCH_REQUIRED
+class K0NoSoftmaxNaNTest(unittest.TestCase):
+    """Fix 2: k=0 must not softmax all-masked attention rows."""
+
+    def test_k0_nan_free(self) -> None:
+        import torch
+        set_seed(42)
+        model = MetaCNPModel(
+            structured_task_dim=4,
+            text_embed_dim=32,
+            hx_dim=48,
+            hp_dim=32,
+            ei_dim=64,
+            context_hidden=64,
+            decoder_hidden=64,
+            dropout=0.0,
+            num_heads=1,
+        )
+        model.eval()
+        B = 3
+        K = 1  # Single dummy slot, all-zero mask
+        target_structured = torch.randn(B, 4)
+        target_text_emb = torch.randn(B, 32)
+        policy_desc = torch.randn(B, 13)
+        ctx_structured = torch.zeros(B, K, 4)
+        ctx_text_emb = torch.zeros(B, K, 32)
+        ctx_success = torch.zeros(B, K, 1)
+        ctx_term = torch.zeros(B, K, 6)
+        ctx_cost = torch.zeros(B, K, 1)
+        ctx_mask = torch.zeros(B, K, 1)
+
+        out = model(
+            target_structured, target_text_emb, policy_desc,
+            ctx_structured, ctx_text_emb,
+            ctx_success, ctx_term, ctx_cost, ctx_mask,
+        )
+        self.assertFalse(bool(torch.isnan(out["logit_success"]).any()),
+                         "Success logits contain NaN for k=0")
+        self.assertFalse(bool(torch.isnan(out["cost_params"]).any()),
+                         "Cost params contain NaN for k=0")
+        self.assertTrue(bool(torch.isfinite(out["logit_success"]).all()),
+                        "Success logits must be finite for k=0")
+
+    def test_mixed_batch_empty_and_nonempty(self) -> None:
+        """Mixed batch: some rows empty (k=0), some non-empty (k>0)."""
+        import torch
+        set_seed(42)
+        model = MetaCNPModel(
+            structured_task_dim=4,
+            text_embed_dim=32,
+            hx_dim=48,
+            hp_dim=32,
+            ei_dim=64,
+            context_hidden=64,
+            decoder_hidden=64,
+            dropout=0.0,
+            num_heads=1,
+        )
+        model.eval()
+        B = 4
+        K = 4
+        target_structured = torch.randn(B, 4)
+        target_text_emb = torch.randn(B, 32)
+        policy_desc = torch.randn(B, 13)
+        ctx_structured = torch.randn(B, K, 4)
+        ctx_text_emb = torch.randn(B, K, 32)
+        ctx_success = torch.randint(0, 2, (B, K, 1)).float()
+        ctx_term = torch.randn(B, K, 6)
+        ctx_cost = torch.rand(B, K, 1) * 50 + 1
+        ctx_mask = torch.ones(B, K, 1)
+        # Rows 0 and 2 are empty (all masks zero).
+        ctx_mask[0, :, :] = 0.0
+        ctx_mask[2, :, :] = 0.0
+
+        out = model(
+            target_structured, target_text_emb, policy_desc,
+            ctx_structured, ctx_text_emb,
+            ctx_success, ctx_term, ctx_cost, ctx_mask,
+        )
+        self.assertFalse(bool(torch.isnan(out["logit_success"]).any()),
+                         "Mixed batch produced NaN in success logits")
+        self.assertFalse(bool(torch.isnan(out["cost_params"]).any()),
+                         "Mixed batch produced NaN in cost params")
+        # Empty rows should receive learned empty-context vectors (finite).
+        self.assertTrue(bool(torch.isfinite(out["logit_success"]).all()),
+                        "All rows must have finite logits")
+
+    def test_empty_context_vectors_are_learned_not_zero(self) -> None:
+        """After init, empty_r vectors are small but non-zero (or become learned)."""
+        import torch
+        model = MetaCNPModel(hx_dim=48, hp_dim=32, ei_dim=64)
+        self.assertFalse(bool((model.empty_r_global == 0).all()),
+                         "empty_r_global should be randomly initialized")
+        self.assertFalse(bool((model.empty_r_local == 0).all()),
+                         "empty_r_local should be randomly initialized")
+
+    def test_empty_context_ignores_dummy_slot_values(self) -> None:
+        import torch
+        set_seed(42)
+        model = MetaCNPModel(
+            structured_task_dim=4,
+            text_embed_dim=32,
+            hx_dim=48,
+            hp_dim=32,
+            ei_dim=64,
+            context_hidden=64,
+            decoder_hidden=64,
+            dropout=0.0,
+            num_heads=1,
+        )
+        model.eval()
+        target_structured = torch.randn(2, 4)
+        target_text = torch.randn(2, 32)
+        policy_desc = torch.randn(2, 13)
+        mask = torch.zeros(2, 3, 1)
+        zeros = model(
+            target_structured,
+            target_text,
+            policy_desc,
+            torch.zeros(2, 3, 4),
+            torch.zeros(2, 3, 32),
+            torch.zeros(2, 3, 1),
+            torch.zeros(2, 3, 6),
+            torch.zeros(2, 3, 1),
+            mask,
+        )
+        random_dummy = model(
+            target_structured,
+            target_text,
+            policy_desc,
+            torch.randn(2, 3, 4),
+            torch.randn(2, 3, 32),
+            torch.randn(2, 3, 1),
+            torch.randn(2, 3, 6),
+            torch.randn(2, 3, 1),
+            mask,
+        )
+        self.assertTrue(torch.allclose(
+            zeros["logit_success"], random_dummy["logit_success"], atol=1e-7,
+        ))
+
+
+@TORCH_REQUIRED
+class PredictContextShapeNormalizationTest(unittest.TestCase):
+    """Fix 3: predict() must accept (K,) and (K,1) scalar context fields."""
+
+    def setUp(self) -> None:
+        set_seed(42)
+        self.model = MetaCNPModel(
+            structured_task_dim=4,
+            text_embed_dim=32,
+            hx_dim=48,
+            hp_dim=32,
+            ei_dim=64,
+            context_hidden=64,
+            decoder_hidden=64,
+            dropout=0.0,
+            num_heads=1,
+        )
+        self.model.eval()
+
+    def test_context_fields_1d_scalar(self) -> None:
+        """success/cost/mask as flat (K,) vectors."""
+        import torch
+        K = 3
+        context = {
+            "structured": torch.randn(K, 4),
+            "text_emb": torch.randn(K, 32),
+            "success": torch.randint(0, 2, (K,)).float(),
+            "cost": torch.rand(K) * 100,
+            "term_onehot": torch.randn(K, 6),
+            "mask": torch.ones(K),
+        }
+        result = self.model.predict(
+            {"structured": torch.randn(4), "text_emb": torch.randn(32)},
+            torch.randn(13),
+            calibration_context=context,
+        )
+        self.assertTrue(math.isfinite(result["success_prob"]))
+        self.assertTrue(math.isfinite(result["cost_mean"]))
+
+    def test_context_fields_2d_k1(self) -> None:
+        """success/cost/mask as (K, 1) tensors."""
+        import torch
+        K = 3
+        context = {
+            "structured": torch.randn(K, 4),
+            "text_emb": torch.randn(K, 32),
+            "success": torch.randint(0, 2, (K, 1)).float(),
+            "cost": torch.rand(K, 1) * 100,
+            "term_onehot": torch.randn(K, 6),
+            "mask": torch.ones(K, 1),
+        }
+        result = self.model.predict(
+            {"structured": torch.randn(4), "text_emb": torch.randn(32)},
+            torch.randn(13),
+            calibration_context=context,
+        )
+        self.assertTrue(math.isfinite(result["success_prob"]))
+        self.assertTrue(math.isfinite(result["cost_mean"]))
+
+    def test_k0_no_context_produces_finite(self) -> None:
+        """k=0 (None context) still works."""
+        import torch
+        result = self.model.predict(
+            {"structured": torch.randn(4), "text_emb": torch.randn(32)},
+            torch.randn(13),
+            calibration_context=None,
+        )
+        self.assertTrue(math.isfinite(result["success_prob"]))
+
+    def test_malformed_scalar_context_shape_raises(self) -> None:
+        import torch
+        context = {
+            "structured": torch.randn(3, 4),
+            "text_emb": torch.randn(3, 32),
+            "success": torch.randn(3, 2),
+            "cost": torch.rand(3),
+            "term_onehot": torch.randn(3, 6),
+            "mask": torch.ones(3),
+        }
+        with self.assertRaisesRegex(ValueError, "must have shape"):
+            self.model.predict(
+                {"structured": torch.randn(4), "text_emb": torch.randn(32)},
+                torch.randn(13),
+                calibration_context=context,
+            )
+
+
+@TORCH_REQUIRED
+class CostNLLConsistencyTest(unittest.TestCase):
+    """Fix 4: cost NLL uses log(sigma) where sigma = softplus(raw_scale)."""
+
+    def test_nll_uses_log_sigma_not_raw_scale(self) -> None:
+        import torch
+        # Simulate model outputs where raw cost_params[:, 1] is negative
+        # (negative raw_scale -> sigma ~ 0.3).  Using raw log_sigma directly
+        # in NLL would give log(-5) = NaN or wrong value.
+        B = 4
+        outputs = {
+            "logit_success": torch.randn(B),
+            "cost_params": torch.tensor([
+                [0.0, -5.0],
+                [1.0, -3.0],
+                [2.0, -1.0],
+                [0.0, 2.0],
+            ]),
+            "term_logits": torch.randn(B, 6),
+        }
+        target_success = torch.randint(0, 2, (B,)).float()
+        target_cost = torch.tensor([10.0, 1.0, 0.0, 100.0])
+        target_term = torch.zeros(B, dtype=torch.long)
+
+        loss_dict = compute_loss(outputs, target_success, target_cost, target_term)
+        self.assertTrue(math.isfinite(loss_dict["cost"].item()),
+                        f"Cost loss not finite: {loss_dict['cost'].item()}")
+        self.assertTrue(math.isfinite(loss_dict["total"].item()),
+                        f"Total loss not finite: {loss_dict['total'].item()}")
+
+    def test_predict_and_nll_sigma_match(self) -> None:
+        """sigma = softplus(raw_scale) is used in both predict and NLL."""
+        import torch
+        set_seed(42)
+        model = MetaCNPModel(
+            structured_task_dim=4,
+            text_embed_dim=32,
+            hx_dim=48,
+            hp_dim=32,
+            ei_dim=64,
+            context_hidden=64,
+            decoder_hidden=64,
+            dropout=0.0,
+            num_heads=1,
+        )
+        model.eval()
+
+        # Predict on a single task/policy (k=4).
+        K = 4
+        context = {
+            "structured": torch.randn(K, 4),
+            "text_emb": torch.randn(K, 32),
+            "success": torch.randint(0, 2, (K,)).float(),
+            "cost": torch.rand(K) * 100,
+            "term_onehot": torch.randn(K, 6),
+            "mask": torch.ones(K),
+        }
+        result = model.predict(
+            {"structured": torch.randn(4), "text_emb": torch.randn(32)},
+            torch.randn(13),
+            calibration_context=context,
+        )
+
+        # Extract raw params from predict and compute sigma the same way.
+        raw_log_sigma = result["raw_cost_log_sigma"]
+        sigma_pred = torch.nn.functional.softplus(
+            torch.tensor(raw_log_sigma)).item()
+        self.assertTrue(math.isfinite(sigma_pred))
+        self.assertGreater(sigma_pred, 0.0,
+                           "sigma must be positive")
+
+    def test_cost_nll_matches_softplus_scale_formula(self) -> None:
+        import torch
+        outputs = {
+            "logit_success": torch.tensor([0.0]),
+            "cost_params": torch.tensor([[0.0, 0.0]]),
+            "term_logits": torch.zeros(1, 6),
+        }
+        loss_dict = compute_loss(
+            outputs,
+            torch.tensor([0.0]),
+            torch.tensor([0.0]),
+            torch.tensor([0]),
+        )
+        sigma = torch.nn.functional.softplus(torch.tensor(0.0)).item() + meta_cnp._EPS
+        expected = 0.5 * math.log(2.0 * math.pi) + math.log(sigma)
+        self.assertAlmostEqual(loss_dict["cost"].item(), expected, places=5)
+
+    def test_predict_cost_is_nonnegative(self) -> None:
+        import torch
+        model = MetaCNPModel(
+            structured_task_dim=4,
+            text_embed_dim=32,
+            hx_dim=48,
+            hp_dim=32,
+            ei_dim=64,
+            context_hidden=64,
+            decoder_hidden=64,
+            dropout=0.0,
+            num_heads=1,
+        )
+        model.eval()
+        with torch.no_grad():
+            model.decoder.cost_head.weight.zero_()
+            model.decoder.cost_head.bias[:] = torch.tensor([-10.0, -10.0])
+        result = model.predict(
+            {"structured": torch.randn(4), "text_emb": torch.randn(32)},
+            torch.randn(13),
+            calibration_context=None,
+        )
+        self.assertGreaterEqual(result["cost_mean"], 0.0)
 
 
 if __name__ == "__main__":

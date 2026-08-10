@@ -216,7 +216,8 @@ class UnbrowserSession:
         version_text = version_check.stdout.decode("utf-8", errors="replace").strip()
         if version_check.returncode != 0 or not version_text:
             raise UnbrowserProtocolError(
-                f"unbrowser --version failed (exit_code={version_check.returncode})"
+                "unbrowser --version failed "
+                f"(exit_code={version_check.returncode}, output={version_text[:128]!r})"
             )
         if len(version_text) > 128:
             raise UnbrowserProtocolError("unbrowser version output is oversized")

@@ -87,6 +87,9 @@ _ORCHESTRATOR_DEFAULTS: dict[str, Any] = {
     "policy": "direct",
     "policy_version": "1",
     "attempt_id": None,
+    "unbrowser_binary": os.environ.get(
+        "PYREPLAB_REMOTE_UNBROWSER", "/usr/local/bin/unbrowser"
+    ),
     "fixture_template": _DEFAULT_FIXTURE_TEMPLATE,
     "confine_unbrowser": _DEFAULT_CONFINE_UNBROWSER,
 }
@@ -279,6 +282,16 @@ def default_preflight(
     problems = validate_spec(spec)
     if problems:
         raise ValueError("invalid batch spec: " + "; ".join(problems))
+    # Fail closed: fixture tasks require filesystem confinement.
+    if (
+        "unbrowser_fixture" in spec.families
+        and not _as_dict(orchestrator_args).get("confine_unbrowser", True)
+    ):
+        raise ValueError(
+            "--no-confine-unbrowser is incompatible with the "
+            "unbrowser_fixture family; fixture tasks require "
+            "unconditional filesystem confinement"
+        )
     output = Path(output_path).expanduser()
     output.parent.mkdir(parents=True, exist_ok=True)
 
@@ -617,16 +630,28 @@ def build_parser() -> argparse.ArgumentParser:
         "(default: single_page_extraction)",
     )
     parser.add_argument(
+        "--unbrowser-binary",
+        default=_ORCHESTRATOR_DEFAULTS["unbrowser_binary"],
+        help="absolute Unbrowser binary path on the remote runner "
+        "(or PYREPLAB_REMOTE_UNBROWSER; default: /usr/local/bin/unbrowser) "
+        "-- used by unbrowser, unbrowser_interactive, and "
+        "unbrowser_fixture families",
+    )
+    parser.add_argument(
         "--confine-unbrowser",
         action="store_true",
         default=_DEFAULT_CONFINE_UNBROWSER,
-        help="confine Unbrowser to only the fixture page URL (default: True)",
+        help="confine Unbrowser to filesystem isolation inside a Bubblewrap "
+        "sandbox (default: True). This provides filesystem confinement, "
+        "not URL/network isolation.",
     )
     parser.add_argument(
         "--no-confine-unbrowser",
         action="store_false",
         dest="confine_unbrowser",
-        help="disable Unbrowser confinement (allow any URL)",
+        help="disable Unbrowser filesystem confinement. "
+        "Rejected when any family is unbrowser_fixture because fixture "
+        "tasks require filesystem isolation.",
     )
     parser.add_argument(
         "--output",
@@ -664,6 +689,13 @@ def main(argv: list[str] | None = None) -> int:
             single_policy=args.single_policy,
             treatment_refs=treatment_refs,
         )
+        # Fail closed: fixture tasks require filesystem confinement.
+        if "unbrowser_fixture" in spec.families and not args.confine_unbrowser:
+            raise ValueError(
+                "--no-confine-unbrowser is incompatible with the "
+                "unbrowser_fixture family; fixture tasks require "
+                "unconditional filesystem confinement"
+            )
         orchestrator_args = {
             "host": args.host,
             "remote_project": args.remote_project,
@@ -678,6 +710,7 @@ def main(argv: list[str] | None = None) -> int:
             "treatment_registry": args.treatment_registry,
             "treatments": args.treatments,
             "treatment_registry_hash": registry_hash,
+            "unbrowser_binary": args.unbrowser_binary,
             "fixture_template": args.fixture_template,
             "confine_unbrowser": args.confine_unbrowser,
         }

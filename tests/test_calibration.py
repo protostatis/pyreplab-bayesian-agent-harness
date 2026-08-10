@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 import unittest
 
 from pyreplab_harness import calibration
@@ -132,10 +133,21 @@ class BuildCalibrationContextTest(unittest.TestCase):
 
     def test_normalization_applied(self) -> None:
         rows = [self._make_row(f"t{i}", True, 200.0 + i * 10) for i in range(5)]
-        norm_stats = {"cost_mean": 200.0, "cost_std": 50.0}
+        norm_stats = {"cost_mean": math.log1p(200.0), "cost_std": 1.0}
         ctx = calibration.build_calibration_context(rows, k=5, normalization_stats=norm_stats)
-        # First row cost = 200, normalized to 0.
+        # First row log1p(cost) equals the fitted mean.
         self.assertAlmostEqual(ctx["cost"][0], 0.0)
+
+    def test_negative_cost_raises(self) -> None:
+        rows = [self._make_row("t1", True, -1.0)]
+        with self.assertRaisesRegex(ValueError, "invalid cost"):
+            calibration.build_calibration_context(rows, k=1)
+
+    def test_conflicting_cost_fields_raise(self) -> None:
+        row = self._make_row("t1", True, 10.0)
+        row["output_token_cost"] = 11.0
+        with self.assertRaisesRegex(ValueError, "conflicting cost fields"):
+            calibration.build_calibration_context([row], k=1)
 
     def test_termination_encoding(self) -> None:
         rows = [
@@ -149,6 +161,45 @@ class BuildCalibrationContextTest(unittest.TestCase):
         self.assertEqual(ctx["term_onehot"][0][0], 1.0)
         # tool_call_limit -> index 1.
         self.assertEqual(ctx["term_onehot"][1][1], 1.0)
+
+    def test_consumes_nested_cnp_embedding(self) -> None:
+        """build_calibration_context finds task_embedding in
+        model_input.task.task_embedding.vector."""
+        nested_emb = [0.1, 0.2, 0.3, 0.4]
+        row = {
+            "task_id": "t-nested",
+            "verified_success": True,
+            "cost": 100.0,
+            "output_token_cost": 100,
+            "termination_class": "normal_completion",
+            "model_input": {
+                "task": {
+                    "task_embedding": {
+                        "encoder": "sha256_ascii_projection_v1",
+                        "version": 1,
+                        "vector": list(nested_emb),
+                    },
+                    "template": "extraction",
+                },
+            },
+        }
+        ctx = calibration.build_calibration_context([row], k=1)
+        self.assertEqual(len(ctx["task_feature_vectors"]), 1)
+        self.assertEqual(ctx["task_feature_vectors"][0], list(nested_emb))
+
+    def test_legacy_top_level_embedding_still_works(self) -> None:
+        """Legacy rows with top-level task_embedding are still consumed."""
+        legacy_emb = [0.5, 0.6, 0.7]
+        row = {
+            "task_id": "t-legacy",
+            "verified_success": True,
+            "cost": 50.0,
+            "output_token_cost": 50,
+            "termination_class": "normal_completion",
+            "task_embedding": list(legacy_emb),
+        }
+        ctx = calibration.build_calibration_context([row], k=1)
+        self.assertEqual(ctx["task_feature_vectors"][0], list(legacy_emb))
 
 
 class FrozenCalibrationSplitTest(unittest.TestCase):
@@ -187,6 +238,16 @@ class FrozenCalibrationSplitTest(unittest.TestCase):
     def test_empty_raises(self) -> None:
         with self.assertRaises(ValueError):
             calibration.frozen_calibration_split([], seed=42)
+
+    def test_insufficient_unique_tasks_raises(self) -> None:
+        tasks = [f"task-{i}" for i in range(8)]
+        with self.assertRaisesRegex(ValueError, "at least 16 unique"):
+            calibration.frozen_calibration_split(tasks, seed=42)
+
+    def test_duplicate_tasks_raise(self) -> None:
+        tasks = [f"task-{i}" for i in range(16)] + ["task-0"]
+        with self.assertRaisesRegex(ValueError, "must be unique"):
+            calibration.frozen_calibration_split(tasks, seed=42)
 
 
 class PolicyTaskSplitTest(unittest.TestCase):
@@ -251,6 +312,36 @@ class PolicyTaskSplitTest(unittest.TestCase):
                 seed=42,
             )
 
+    def test_insufficient_inputs_raise_instead_of_empty_splits(self) -> None:
+        ratios = {
+            "task_meta_train": 0.4, "task_dev_cal": 0.1, "task_dev_target": 0.1,
+            "task_final_cal": 0.1, "task_final_known": 0.2, "task_final_held": 0.1,
+            "policy_meta_train": 0.6, "policy_development": 0.2, "policy_final": 0.2,
+        }
+        with self.assertRaisesRegex(ValueError, "at least 6 tasks"):
+            calibration.policy_task_split(
+                ["t1", "t2"], ["p1", "p2", "p3"], ratios, seed=42
+            )
+        with self.assertRaisesRegex(ValueError, "at least 3 policies"):
+            calibration.policy_task_split(
+                [f"t{i}" for i in range(6)], ["p1", "p2"], ratios, seed=42
+            )
+
+    def test_duplicate_inputs_raise(self) -> None:
+        ratios = {
+            "task_meta_train": 0.4, "task_dev_cal": 0.1, "task_dev_target": 0.1,
+            "task_final_cal": 0.1, "task_final_known": 0.2, "task_final_held": 0.1,
+            "policy_meta_train": 0.6, "policy_development": 0.2, "policy_final": 0.2,
+        }
+        with self.assertRaisesRegex(ValueError, "tasks must be unique"):
+            calibration.policy_task_split(
+                ["t1"] * 6, ["p1", "p2", "p3"], ratios, seed=42
+            )
+        with self.assertRaisesRegex(ValueError, "policies must be unique"):
+            calibration.policy_task_split(
+                [f"t{i}" for i in range(6)], ["p1"] * 3, ratios, seed=42
+            )
+
 
 class FitNormalizationStatsTest(unittest.TestCase):
     def test_non_empty_data(self) -> None:
@@ -260,7 +351,9 @@ class FitNormalizationStatsTest(unittest.TestCase):
             {"cost": 150.0},
         ]
         stats = calibration.fit_normalization_stats(rows)
-        self.assertAlmostEqual(stats["cost_mean"], 150.0)
+        expected = sum(math.log1p(value) for value in (100.0, 200.0, 150.0)) / 3
+        self.assertAlmostEqual(stats["cost_mean"], expected)
+        self.assertEqual(stats["cost_transform"], "log1p_zscore")
         self.assertEqual(stats["n_rows"], 3)
         self.assertGreater(stats["cost_std"], 0)
 
@@ -276,7 +369,16 @@ class FitNormalizationStatsTest(unittest.TestCase):
             {"output_token_cost": 100.0},
         ]
         stats = calibration.fit_normalization_stats(rows)
-        self.assertAlmostEqual(stats["cost_mean"], 75.0)
+        self.assertAlmostEqual(
+            stats["cost_mean"],
+            (math.log1p(50.0) + math.log1p(100.0)) / 2,
+        )
+
+    def test_conflicting_cost_fields_raise(self) -> None:
+        with self.assertRaisesRegex(ValueError, "conflicting cost fields"):
+            calibration.fit_normalization_stats(
+                [{"cost": 50.0, "output_token_cost": 51.0}]
+            )
 
     def test_ignores_non_finite(self) -> None:
         rows = [
@@ -286,13 +388,16 @@ class FitNormalizationStatsTest(unittest.TestCase):
             {"cost": float("nan")},
         ]
         stats = calibration.fit_normalization_stats(rows)
-        self.assertAlmostEqual(stats["cost_mean"], 150.0)
+        self.assertAlmostEqual(
+            stats["cost_mean"],
+            (math.log1p(100.0) + math.log1p(200.0)) / 2,
+        )
         self.assertEqual(stats["n_rows"], 2)
 
     def test_single_row(self) -> None:
         rows = [{"cost": 100.0}]
         stats = calibration.fit_normalization_stats(rows)
-        self.assertAlmostEqual(stats["cost_mean"], 100.0)
+        self.assertAlmostEqual(stats["cost_mean"], math.log1p(100.0))
         self.assertEqual(stats["cost_std"], 1.0)  # fallback for single point
 
 

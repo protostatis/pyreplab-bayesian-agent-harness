@@ -4,6 +4,9 @@
 > calibration protocol, context schema, cost definition, baselines, metrics, or
 > stop gates may be revised after the final-policy stage is unlocked. Corrections
 > before rollout are recorded in the revision log at the bottom.
+> The headroom-pilot manifest is separately locked at its first non-canary
+> attempt; any later change invalidates that entire pilot and requires a visibly
+> versioned replacement manifest while preserving the aborted data.
 >
 > **Scope:** M3 is the outcome-model training milestone. It depends on M0
 > (interactive plumbing spike), M1 (deterministic interactive fixtures and
@@ -75,7 +78,7 @@ The following are held constant across all 72 policies to avoid confounding:
 
 ```text
 base model             frozen Gemma 26B
-Pi runtime             pinned version
+Pi runtime             pinned package, version, CLI SHA-256, thinking=off
 Unbrowser binary       pinned v0.0.19 with SHA-256 digest
 allowed tools          bash, unbrowser
 tool interface         native_bash_unbrowser_interactive_v1
@@ -95,10 +98,17 @@ of confounding four resource limits.
 Each factor must be either mechanically enforced or have a measurable
 manipulation check recorded in every attempt:
 
-- First eligible browser action type checked against `observation` factor.
-- Whether a final re-observation call occurred checked against `verification`.
-- Whether a retry followed an eligible failure checked against `recovery`.
-- Tool-call count checked against `tool_cap`.
+- Pre-tool output checked against explicit planning markers: no preamble for
+  `direct`, one `PLAN:` line for `brief_plan`, and at least `STEP 1:` plus
+  `STEP 2:` lines for `decompose`.
+- First successful post-navigation observation checked against `observation`:
+  `text`, `blockmap`, or `query`, respectively.
+- A repeated read-only observation before result submission checked against
+  `verification`.
+- A successful same-tool retry after the first eligible failure checked against
+  `recovery`.
+- Admitted tool-call count checked against the enforced `tool_cap`; rejected
+  over-cap calls are recorded separately.
 
 Non-adherence is recorded but does **not** exclude the attempt. The estimand is
 intention-to-treat performance of the bundle.
@@ -159,11 +169,23 @@ T_dev_tgt   policy-development target pool (disjoint)
 T_fin_cal   final calibration pool (disjoint)
 T_fin_known final target, known templates
 T_fin_held  final target, two structurally held-out templates
+T_canary    operational validation only; permanently excluded
+T_pilot     headroom/manipulation screening only; permanently excluded
 ```
 
-Template holdout: six development templates; two structurally held-out until
-final evaluation. Known-template and held-template results are reported
-separately.
+The exporter assigns `T_canary` to `canary_excluded` and `T_pilot` to
+`pilot_excluded`; neither role may enter any training, calibration,
+development, or final-evaluation pool.
+
+Template holdout: the six known templates are `single_page_extraction`,
+`table_filter_sort`, `multi_page_navigation`, `search_filter_controls`,
+`form_entry_validation`, and `distractor_recovery`. The two structurally held
+templates are `cross_page_comparison` and `stateful_workflow`; they remain
+unseen until final evaluation. Known-template and held-template results are
+reported separately.
+
+Final calibration uses known templates only. Held-template categories never
+enter final calibration; the two held templates first appear in `T_fin_held`.
 
 ### 5.3 Final target pool
 
@@ -508,23 +530,81 @@ results by template and difficulty
 
 - Every grammar factor is mechanically enforced or has a measurable adherence
   check.
-- First-observation behavior matches its factor in at least 75% of eligible
-  pilot attempts.
-- Verification and retry levels show clear behavioral separation.
+- Planning-marker adherence is at least 75% separately for `direct`,
+  `brief_plan`, and `decompose`.
+- First-observation adherence is at least 75% separately for `text_first`,
+  `structure_first`, and `targeted_query_first`.
+- Among attempts that reach a result-submission opportunity, the repeated-read
+  rate for `final_reobserve` exceeds `submit_directly` by at least 25 percentage
+  points, with at least eight opportunities per level. Intention-to-treat rates
+  over all attempts are also reported.
+- On the two frozen recovery tasks, eligibility requires that the designated
+  `page_0` click is the first interaction/error and returns HTTP 503. There must
+  be exactly eight eligible attempts per recovery level. The successful
+  immediate same-tool retry rate for `diagnose_retry_once` must exceed
+  `fail_fast` by at least 25 percentage points. Incidental errors on other tasks
+  do not enter this manipulation check.
 - Enforced tool-cap compliance is 100%.
 - No page/target/verifier leakage enters descriptors or contexts.
 - CNP validates on synthetic data (plumbing evidence only).
 
 ### 12.2 Headroom pilot gate (96 attempts)
 
-Run four maximally different policies across 24 tasks before any large rollout.
-Stop unless all hold:
+Run four maximally different policies across 12 unique tasks, with two rollout
+replicas for every policy-task cell (`12 x 4 x 2 = 96 attempts`), before any
+large rollout. The 12 tasks contain two tasks from each known template and four
+tasks at each difficulty. The 24 sequential panels use every four-policy
+execution permutation once; within each template, every policy occupies every
+execution position once. Templates are interleaved over execution time. Replica
+chronology is counterbalanced: replica 0 runs first for six tasks and replica 1
+runs first for six.
 
-- Outcomes are non-degenerate (no policy always-succeeds or always-fails).
-- Policy disagreement is at least approximately 20%.
-- Realized per-task oracle exceeds the best eligible fixed policy by at least
-  approximately 8 percentage points.
-- Consumed cost spans a meaningful range (at least 20% variation).
+Every panel has a unique frozen sampling seed, shared across its four policies
+as a common-random-number control; the other replica of the same task has a
+different seed. The Pi provider is pinned to `openai-completions`, and the
+extension writes these values into every provider request:
+
+```text
+temperature=0.8  top_p=0.95  top_k=40  min_p=0.05
+repeat_penalty=1.0  presence_penalty=0.0  frequency_penalty=0.0
+thinking=off
+```
+
+A sanitized provider-request receipt containing only the panel seed and these
+sampling values is required whenever at least one provider turn occurred.
+
+The two `distractor_recovery` tasks require a frozen first probe that returns a
+recoverable non-200 status, yielding eight designed recovery-eligible attempts
+per recovery level across replicas. These two tasks are manipulation-only: they
+are excluded from non-degeneracy, stable-disagreement, cross-replica-lift, and
+cost-range calculations. Stop unless all hold:
+
+- Completeness is exactly 12 frozen tasks, 24 frozen panels, four expected policy
+  bundles per panel, two replicas per policy-task cell, 96 unique measured
+  attempts, no infrastructure-error records, and a non-missing output-token
+  cost for every attempt.
+- Across the ten manipulation-neutral tasks (20 rollout outcomes per policy),
+  outcomes are non-degenerate: every policy has between 1 and 19 successes.
+- Repeat discordance is at most 10% across the 48 repeated policy-task cells.
+- At least 2 of the 10 neutral tasks show stable disagreement: one policy
+  succeeds on both replicas and another fails on both replicas. Requiring two
+  task clusters prevents a single seed from establishing headroom while retaining
+  a 20% screening threshold.
+- Cross-replica allocation has at least one more expected neutral-task success
+  than the best fixed policy (`1/10 = 10` points): select from replica 0 and
+  score on replica 1, repeat in the opposite direction, then average. Binary
+  selector ties are scored uniformly and fractionally over all tied winners;
+  policy labels never break ties.
+- On neutral tasks only,
+  `max(policy mean output tokens) / min(policy mean output tokens) >= 1.20`.
+
+Model/runtime failures with a prepared attempt and usable event/cost record are
+intention-to-treat failures and are never rerun. A controller, SSH, fixture-port,
+or persistence failure that prevents a measured row invalidates the complete
+96-attempt panel: stop immediately, preserve the aborted run and manifest, and
+restart all 96 attempts in a fresh run root under the same manifest. Partial
+panels are never combined. Failure classification must use infrastructure logs,
+not observed task outcomes.
 
 ### 12.3 Before unlocking final policies
 
@@ -586,7 +666,7 @@ menu.
 
 ```text
 Phase 0  Validate CNP on synthetic policy outcomes           (no native spend)
-Phase 1  Headroom pilot: 4 policies x 24 tasks = 96 attempts (stop gate)
+Phase 1  Headroom pilot: 4 policies x 12 tasks x R=2 = 96 attempts (stop gate)
 Phase 2  Method pilot: ~12 train + 4 dev policies, ~300-350 attempts
 Phase 3  Frozen development: 48 meta-train + 12 dev policies, full rows
 Phase 4  Final held-out: 12 policies, calibration + complete panel, once
@@ -655,7 +735,12 @@ add frozen negative-control (shuffled context) evaluator
 
 | Date | Change | Reason |
 |---|---|---|
-| _(none yet)_ | | |
+| 2026-08-10 | Created the initial pre-canary 72-policy registry at hash `4cfd05631af3907d42b5a6c64cfca5205fcd1aef3a583886e7ccccc9dd5bcfe7` and split manifest `edd169f46b71ee17cbe771a9a16cc1353946ba37435e9d049849ee3f1dea668d`; this version is superseded and excluded. | Record policy identities before the operational v0.0.19 canary. |
+| 2026-08-10 | After the excluded canary and pre-pilot semantic audit, bumped the fixture generator/verifier to v2, removed generic nonce shortcuts, made the workflow state-bearing, removed comparison labels that revealed the winner, added fixture-specific Pi instructions, made planning markers measurable, and froze grammar `m3-v2` / policy version `2`. Final registry hash: `2d3b6c3d956fed9d255782bef264f6333129e803fc6853b1fcebb4486a8a2d3f`; balanced split manifest hash: `b8853ae708b2e1943c2097ae546c47ad046a1a0c2769ccc55bba9a1b6510485f`; split seed remains `20260810`. | Close validity and instrumentation defects before any headroom-pilot outcome is observed; all v1 canaries remain excluded. |
+| 2026-08-10 | Replaced the unreplicated 24-task screening layout before any v2 outcome with 12 tasks × 4 policies × 2 rollout replicas. Added cross-replica lift, repeat-concordance, stable-disagreement, planning-adherence, deterministic recovery probes, per-template execution-position balance, interleaved execution, explicit `T_pilot` exclusion, attempt replica metadata, and pinned `thinking=off`. Frozen headroom manifest hash: `d5d22bb742ed91cfc58c1c224ef4fdda1aae9f73967a4f23a8201ad1c62b4ad6`. | Prevent stochastic rollout noise from manufacturing disagreement/oracle lift and remove post-outcome discretion from manipulation eligibility and pilot ordering. |
+| 2026-08-10 | Superseded the still-unused `d5d22bb…` headroom manifest before any v2 canary or pilot outcome. Pinned `@earendil-works/pi-coding-agent` `0.84.1` and CLI SHA-256 `840d1e8e689ed9e4937bcb00b9a810e02a8567d9afb10a47097f11ca93ea1521`; made executed-policy, verifier, and trajectory identity structural gate requirements; and added a durable active-panel marker that blocks resume after an interrupted panel. Then-current headroom manifest hash: `e466bbf8282f1e12f2dbd460f4dba8f8dc9536057415bebe99ae69e80d73729f`. | Close runtime-identity and partial-panel resume paths before collecting evidence. |
+| 2026-08-10 | Superseded all still-unused intermediate headroom manifests before any v2 canary or pilot outcome. Excluded the two forced-recovery tasks from outcome/cost headroom; moved headroom thresholds to 2/10 neutral stable-disagreement tasks and 1/10 uniform-tie cross-replica lift; made recovery eligibility exact and task-specific; required planning/observation adherence per factor level and verification opportunities; assigned 24 explicit panel seeds with fixed sampling parameters; counterbalanced replica chronology 6/6; captured sanitized outgoing-request receipts; and bound the Pi provider endpoint to exact remote executable/model paths and hashes. Current headroom manifest hash: `e7f257c48548245b3aaba965c81bff4e548c06fca06b16c84e10eadf2daf0931`. | Prevent designed recovery behavior, label order, provider defaults, endpoint drift, or pooled manipulation rates from manufacturing a pilot pass. |
+| 2026-08-10 | Ran the single permitted v2 operational canary outside all pilot coordinates: `T_canary`, `distractor_recovery`, task seed `990000001`, sampling seed `1900000001`, policy `ub-direct-structure_first-submit_directly-diagnose_retry_once-expanded@2-a18fd8c7`. Verification passed with output-token cost `2626`, 11 admitted calls, exact HTTP-503 probe detection, Unbrowser `0.0.19`, and the frozen sampling receipt. Export produced exactly one `canary_excluded` row with 32-D task features, 13-D treatment features, and no leakage violations. Adherence truthfully recorded planning/probe/submit/cap as passing and structure-first/immediate-retry as failing. No frozen threshold or pilot coordinate changed after observing it. | Validate operational plumbing and manipulation instrumentation only; this row is permanently inadmissible as headroom or allocator-effectiveness evidence. |
 
 No revisions are permitted after the final-policy stage is unlocked.
 

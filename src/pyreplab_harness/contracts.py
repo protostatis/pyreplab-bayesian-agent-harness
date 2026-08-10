@@ -84,6 +84,10 @@ class AttemptRecord:
     created_at: str
     treatment_bundle_hash: str | None = None
     treatment_registry_hash: str | None = None
+    rollout_replica: int | None = None
+    sampling_seed: int | None = None
+    pilot_manifest_hash: str | None = None
+    pilot_panel_id: str | None = None
     status: str = "prepared"
     pi_events_ref: str | None = None
     normalized_events_ref: str | None = None

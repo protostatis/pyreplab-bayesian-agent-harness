@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import unittest
+from unittest import mock
 
 from pyreplab_harness.sandbox import SandboxResult
+from pyreplab_harness import worker
 from pyreplab_harness.worker import WorkerConfig, handle_request
 
 
@@ -59,6 +61,13 @@ class WorkerProtocolTest(unittest.TestCase):
         self.assertEqual(response["result"]["action"], "navigate")
         self.assertEqual(unbrowser.calls, [{"action": "navigate"}])
         self.assertFalse(stop)
+
+    def test_fixture_server_bind_failure_is_not_ignored(self) -> None:
+        worker._fixture_server_instance = None
+        with mock.patch.object(worker, "FixtureServer", side_effect=OSError("busy")):
+            with self.assertRaisesRegex(OSError, "busy"):
+                worker.ensure_fixture_server()
+        self.assertIsNone(worker._fixture_server_instance)
 
 
 if __name__ == "__main__":

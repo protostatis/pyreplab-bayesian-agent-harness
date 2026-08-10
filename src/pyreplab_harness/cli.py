@@ -13,6 +13,7 @@ from .artifact_gym import (
     verify_artifact_attempt,
 )
 from .events import normalize_pi_events
+from .fixture_templates import TEMPLATES as _FIXTURE_TEMPLATES
 from .gym_registry import FAMILIES, generate_task, verify_attempt
 from .worker import add_worker_arguments, run_from_args
 
@@ -30,6 +31,17 @@ def build_parser() -> argparse.ArgumentParser:
     generate.add_argument("--root", required=True)
     generate.add_argument("--seed", required=True, type=int)
     generate.add_argument("--difficulty", choices=["easy", "medium", "hard"], default="medium")
+    generate.add_argument(
+        "--fixture-template",
+        choices=_FIXTURE_TEMPLATES,
+        default="single_page_extraction",
+        help="fixture page template (only used when --family is unbrowser_fixture)",
+    )
+    generate.add_argument(
+        "--task-role",
+        default=None,
+        help="frozen protocol role (only supported by unbrowser_fixture)",
+    )
 
     generate_artifact = subparsers.add_parser("generate-artifact")
     generate_artifact.add_argument("--root", required=True)
@@ -44,6 +56,10 @@ def build_parser() -> argparse.ArgumentParser:
     prepare.add_argument("--policy-version", default="1")
     prepare.add_argument("--treatment-bundle-hash", default=None)
     prepare.add_argument("--treatment-registry-hash", default=None)
+    prepare.add_argument("--rollout-replica", type=int, default=None)
+    prepare.add_argument("--sampling-seed", type=int, default=None)
+    prepare.add_argument("--pilot-manifest-hash", default=None)
+    prepare.add_argument("--pilot-panel-id", default=None)
 
     record = subparsers.add_parser("record-events")
     record.add_argument("--root", required=True)
@@ -72,7 +88,13 @@ def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
     if args.command == "generate":
-        _emit(generate_task(args.family, args.root, args.seed, args.difficulty).to_dict())
+        _emit(
+            generate_task(
+                args.family, args.root, args.seed, args.difficulty,
+                fixture_template=getattr(args, "fixture_template", "single_page_extraction"),
+                task_role=getattr(args, "task_role", None),
+            ).to_dict()
+        )
     elif args.command == "verify":
         _emit(verify_attempt(args.family, args.root, args.task_id, args.attempt_id).to_dict())
     elif args.command == "generate-artifact":
@@ -87,6 +109,10 @@ def main(argv: list[str] | None = None) -> int:
                 args.policy_version,
                 args.treatment_bundle_hash,
                 args.treatment_registry_hash,
+                args.rollout_replica,
+                args.sampling_seed,
+                args.pilot_manifest_hash,
+                args.pilot_panel_id,
             ).to_dict()
         )
     elif args.command == "record-events":
