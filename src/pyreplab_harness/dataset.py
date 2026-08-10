@@ -132,6 +132,39 @@ def flatten_public_metadata(
     return flattened
 
 
+_UNBROWSER_GRAMMAR_INTERFACE = "native_bash_unbrowser_interactive_v1"
+
+_UNBROWSER_GRAMMAR_FACTOR_KEYS = (
+    "planning",
+    "observation",
+    "verification",
+    "recovery",
+    "tool_cap",
+)
+
+
+def _grammar_factors_from_treatment(
+    treatment: TreatmentSpec,
+) -> dict[str, str] | None:
+    """Extract behavioural grammar factor levels from a treatment's
+    ``generator_metadata``, or ``None`` when the treatment is not an
+    Unbrowser grammar treatment.
+
+    The returned dict contains only the five behavioural factor labels;
+    identity/hash fields (``grammar_version``, ``grammar_size``,
+    ``grammar_name``, ``index``, ``policy_id``, ``bundle_id``, ``bundle_hash``)
+    are excluded.
+    """
+    meta = dict(treatment.generator_metadata)
+    if not meta or "planning" not in meta:
+        return None
+    return {
+        key: str(meta[key])
+        for key in _UNBROWSER_GRAMMAR_FACTOR_KEYS
+        if key in meta
+    }
+
+
 def build_model_input(
     task: dict[str, Any],
     policy_id: str,
@@ -163,7 +196,17 @@ def build_model_input(
                 "attempt policy identity does not match treatment registry entry: "
                 f"{policy_id}@{policy_version} != {treatment.id}@{treatment.version}"
             )
-        model_input["treatment"] = treatment_model_input_descriptor(treatment)
+        treatment_desc = treatment_model_input_descriptor(treatment)
+        # ------------------------------------------------------------------
+        # ADDITIVE: attach grammar factor labels for Unbrowser policy cells.
+        # Non-grammar treatments (interface != _UNBROWSER_GRAMMAR_INTERFACE)
+        # are unaffected — their model_input.treatment dict remains unchanged.
+        # ------------------------------------------------------------------
+        if treatment.tool_interface == _UNBROWSER_GRAMMAR_INTERFACE:
+            factors = _grammar_factors_from_treatment(treatment)
+            if factors is not None:
+                treatment_desc["grammar_factors"] = factors
+        model_input["treatment"] = treatment_desc
     return model_input
 
 

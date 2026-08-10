@@ -48,6 +48,21 @@ from .orchestrator import (
 )
 from .treatments import TreatmentRegistry
 
+#: Canonical fixture template names recognised by the unbrowser fixture family.
+_FIXTURE_TEMPLATES: tuple[str, ...] = (
+    "single_page_extraction",
+    "table_filter_sort",
+    "multi_page_navigation",
+    "search_filter_controls",
+    "form_entry_validation",
+    "cross_page_comparison",
+    "stateful_workflow",
+    "distractor_recovery",
+)
+
+_DEFAULT_FIXTURE_TEMPLATE = "single_page_extraction"
+_DEFAULT_CONFINE_UNBROWSER = True
+
 _POLICIES: tuple[str, ...] = ("direct", "deliberate")
 _DIFFICULTIES: tuple[str, ...] = ("easy", "medium", "hard")
 
@@ -72,6 +87,8 @@ _ORCHESTRATOR_DEFAULTS: dict[str, Any] = {
     "policy": "direct",
     "policy_version": "1",
     "attempt_id": None,
+    "fixture_template": _DEFAULT_FIXTURE_TEMPLATE,
+    "confine_unbrowser": _DEFAULT_CONFINE_UNBROWSER,
 }
 
 
@@ -455,6 +472,9 @@ def _run_job(
     if job.mode == "treatment_set":
         record["treatment_refs"] = str(job.policy).split(",")
         record["treatment_registry_hash"] = base.get("treatment_registry_hash")
+    if job.family == "unbrowser_fixture":
+        record["fixture_template"] = str(base.get("fixture_template", _DEFAULT_FIXTURE_TEMPLATE))
+        record["confine_unbrowser"] = bool(base.get("confine_unbrowser", _DEFAULT_CONFINE_UNBROWSER))
     try:
         result = _invoke_runner(project_root, base, job)
     except Exception as error:  # noqa: BLE001 - per-job failures are data.
@@ -590,6 +610,25 @@ def build_parser() -> argparse.ArgumentParser:
         help="comma-separated registry treatment references; mutually exclusive with --single-policy",
     )
     parser.add_argument(
+        "--fixture-template",
+        choices=_FIXTURE_TEMPLATES,
+        default=_DEFAULT_FIXTURE_TEMPLATE,
+        help="fixture page template for the unbrowser_fixture family "
+        "(default: single_page_extraction)",
+    )
+    parser.add_argument(
+        "--confine-unbrowser",
+        action="store_true",
+        default=_DEFAULT_CONFINE_UNBROWSER,
+        help="confine Unbrowser to only the fixture page URL (default: True)",
+    )
+    parser.add_argument(
+        "--no-confine-unbrowser",
+        action="store_false",
+        dest="confine_unbrowser",
+        help="disable Unbrowser confinement (allow any URL)",
+    )
+    parser.add_argument(
         "--output",
         required=True,
         help="path to the JSONL results file; one record is appended per job",
@@ -639,6 +678,8 @@ def main(argv: list[str] | None = None) -> int:
             "treatment_registry": args.treatment_registry,
             "treatments": args.treatments,
             "treatment_registry_hash": registry_hash,
+            "fixture_template": args.fixture_template,
+            "confine_unbrowser": args.confine_unbrowser,
         }
         summary = run_batch(
             spec,
@@ -669,6 +710,9 @@ __all__ = [
     "parse_seeds",
     "run_batch",
     "validate_spec",
+    "_FIXTURE_TEMPLATES",
+    "_DEFAULT_FIXTURE_TEMPLATE",
+    "_DEFAULT_CONFINE_UNBROWSER",
 ]
 
 

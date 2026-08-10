@@ -10,6 +10,8 @@ from pathlib import Path
 
 from pyreplab_harness.artifact_gym import prepare_attempt, record_pi_events
 from pyreplab_harness.dataset import (
+    _grammar_factors_from_treatment,
+    _UNBROWSER_GRAMMAR_INTERFACE,
     build_dataset,
     build_model_input,
     flatten_public_metadata,
@@ -21,7 +23,15 @@ from pyreplab_harness.dataset import (
 from pyreplab_harness.events import normalize_pi_events
 from pyreplab_harness.gym_registry import generate_task, verify_attempt
 from pyreplab_harness.io_utils import read_json, write_json
-from pyreplab_harness.treatments import TreatmentRegistry, TreatmentSpec
+from pyreplab_harness.meta_grammar import (
+    enumerate_unbrowser_grammar,
+    export_grammar_factors,
+)
+from pyreplab_harness.treatments import (
+    TreatmentRegistry,
+    TreatmentSpec,
+    generate_treatments,
+)
 
 
 def _synthetic_events(
@@ -623,6 +633,278 @@ class CliTest(unittest.TestCase):
             summary = json.loads(buffer.getvalue())
             self.assertEqual(summary["rows"], 1)
             self.assertNotIn("rows_written", summary)
+
+
+class GrammarFactorExportTest(unittest.TestCase):
+    """Tests that grammar factor labels from the 72-cell Unbrowser policy
+    grammar are correctly included in ``model_input.treatment`` for dataset
+    rows generated from grammar treatments, and that non-grammar treatments
+    are unaffected."""
+
+    @staticmethod
+    def _unbrowser_grammar_treatment(index: int = 0) -> TreatmentSpec:
+        """Return a single Unbrowser grammar treatment from the full 72."""
+        return enumerate_unbrowser_grammar()[index]
+
+    @staticmethod
+    def _legacy_bash_treatment() -> TreatmentSpec:
+        """Return a non-grammar treatment (standard bash policy)."""
+        return TreatmentSpec(
+            id="test-legacy",
+            version="1",
+            system_prompt="Plan briefly, execute, verify.",
+            allowed_tools=("bash",),
+            max_output_tokens=1024,
+            tool_call_limit=4,
+            command_timeout_seconds=30,
+            wall_time_limit_seconds=300,
+        )
+
+    def test_grammar_factors_extracted_for_unbrowser_treatment(self) -> None:
+        treatment = self._unbrowser_grammar_treatment(0)
+        factors = _grammar_factors_from_treatment(treatment)
+        self.assertIsNotNone(factors)
+        self.assertEqual(
+            set(factors),
+            {"planning", "observation", "verification", "recovery", "tool_cap"},
+        )
+        self.assertEqual(factors["planning"], treatment.generator_metadata["planning"])
+
+    def test_grammar_factors_none_for_non_grammar_treatment(self) -> None:
+        treatment = self._legacy_bash_treatment()
+        self.assertIsNone(_grammar_factors_from_treatment(treatment))
+
+    def test_grammar_factors_none_for_empty_metadata(self) -> None:
+        treatment = TreatmentSpec(
+            id="test-empty-meta",
+            version="1",
+            system_prompt="No grammar.",
+            allowed_tools=("bash", "unbrowser"),
+            max_output_tokens=1024,
+            tool_call_limit=4,
+            command_timeout_seconds=30,
+            wall_time_limit_seconds=300,
+            tool_interface=_UNBROWSER_GRAMMAR_INTERFACE,
+            generator_metadata={},  # No grammar factors
+        )
+        self.assertIsNone(_grammar_factors_from_treatment(treatment))
+
+    def test_grammar_factors_excluded_from_legacy_treatment_model_input(
+        self,
+    ) -> None:
+        """model_input.treatment must NOT have grammar_factors for non-
+        grammar treatments (backward compatibility)."""
+        task = {
+            "prompt": "task",
+            "contract": [],
+            "family": "artifact",
+            "template_id": "template",
+            "difficulty": "easy",
+            "public_metadata": {},
+        }
+        treatment = self._legacy_bash_treatment()
+        model_input = build_model_input(
+            task, treatment.id, treatment.version, treatment=treatment
+        )
+        self.assertIn("treatment", model_input)
+        self.assertNotIn("grammar_factors", model_input["treatment"])
+
+    def test_grammar_factors_included_in_unbrowser_model_input(self) -> None:
+        task = {
+            "prompt": "Extract verification key from fixture page.",
+            "contract": ["Navigate to the fixture page.", "Extract the code."],
+            "family": "unbrowser_fixture",
+            "template_id": "single_page_extraction",
+            "difficulty": "easy",
+            "public_metadata": {"fixture_url": "http://127.0.0.1:18090/fixture/7/easy"},
+        }
+        treatment = self._unbrowser_grammar_treatment(0)
+        model_input = build_model_input(
+            task, treatment.id, treatment.version, treatment=treatment
+        )
+        self.assertIn("treatment", model_input)
+        tr = model_input["treatment"]
+        self.assertIn("grammar_factors", tr)
+
+        factors = tr["grammar_factors"]
+        self.assertEqual(
+            set(factors),
+            {"planning", "observation", "verification", "recovery", "tool_cap"},
+        )
+        # All factor values are strings, not empty.
+        for key in ("planning", "observation", "verification", "recovery", "tool_cap"):
+            self.assertIsInstance(factors[key], str)
+            self.assertTrue(len(factors[key]) > 0)
+
+    def test_grammar_factors_only_behavioral_levels(self) -> None:
+        """Grammar factors must contain ONLY the five behavioural factor
+        levels — no identity, hash, registry metadata, or version strings."""
+        FORBIDDEN_IN_GRAMMAR = {
+            "policy_id",
+            "policy_version",
+            "bundle_id",
+            "bundle_hash",
+            "grammar_version",
+            "grammar_size",
+            "grammar_name",
+            "index",
+            "registry_position",
+        }
+        treatment = self._unbrowser_grammar_treatment(10)
+        factors = _grammar_factors_from_treatment(treatment)
+        self.assertIsNotNone(factors)
+        for forbidden in FORBIDDEN_IN_GRAMMAR:
+            self.assertNotIn(
+                forbidden,
+                factors,
+                f"grammar_factors must not contain {forbidden!r}",
+            )
+
+    def test_exported_fixture_row_matches_cnp_schema(self) -> None:
+        """Frozen interface contract: an exported fixture task row must
+        have the fields that calibration.py and meta_cnp.py expect.
+
+        * model_input.treatment contains ``grammar_factors`` (five string
+          labels) and the numeric budget keys.
+        * model_input.task (via the parent model_input) contains
+          predecision features (text, family, template_id, difficulty,
+          public_metadata, policy_id, policy_version).
+        * The row has verified_success, termination-like failure_code,
+          and usage cost counters.
+        * NO forbidden fields (page text excerpts, URLs in grammar_factors,
+          verifier diagnostics, policy_id or bundle_id inside
+          grammar_factors) appear where they should not.
+        """
+        treatment = self._unbrowser_grammar_treatment(0)
+        task = {
+            "prompt": "Extract verification key from fixture page.",
+            "contract": ["Navigate to the fixture page.", "Extract the code."],
+            "family": "unbrowser_fixture",
+            "template_id": "single_page_extraction",
+            "difficulty": "easy",
+            "public_metadata": {
+                "fixture_url": "http://127.0.0.1:18090/fixture/7/easy",
+            },
+        }
+        model_input = build_model_input(
+            task, treatment.id, treatment.version, treatment=treatment
+        )
+
+        # -- Predecision task fields exist -----------------------------------
+        for required in (
+            "text",
+            "family",
+            "template_id",
+            "difficulty",
+            "public_metadata",
+            "policy_id",
+            "policy_version",
+        ):
+            self.assertIn(required, model_input, f"missing predecision key {required!r}")
+
+        # -- Treatment with grammar factors ----------------------------------
+        tr = model_input["treatment"]
+        self.assertIn("grammar_factors", tr)
+        factors = tr["grammar_factors"]
+        self.assertEqual(
+            set(factors),
+            {"planning", "observation", "verification", "recovery", "tool_cap"},
+        )
+
+        # Numeric budget keys — required for CNP features.
+        for budget_key in (
+            "max_output_tokens",
+            "tool_call_limit",
+            "command_timeout_seconds",
+            "wall_time_limit_seconds",
+        ):
+            self.assertIn(budget_key, tr)
+            self.assertIsInstance(tr[budget_key], int)
+
+        # -- No forbidden fields in grammar_factors --------------------------
+        FORBIDDEN = {
+            "policy_id",
+            "bundle_id",
+            "bundle_hash",
+            "grammar_version",
+            "grammar_name",
+            "index",
+            "page_text",
+            "url",
+            "selector",
+            "answer",
+        }
+        for forbidden in FORBIDDEN:
+            self.assertNotIn(forbidden, factors)
+
+        # -- model_input must NOT contain post-action fields -----------------
+        for post in ("usage", "verified_success", "failure_code"):
+            self.assertNotIn(post, model_input)
+
+    def test_all_72_grammar_treatments_export_valid_factors(self) -> None:
+        """Every cell in the 72-cell grammar must yield valid grammar_factors."""
+        treatments = enumerate_unbrowser_grammar()
+        self.assertEqual(len(treatments), 72)
+
+        seen_combinations: set[tuple[str, ...]] = set()
+        for treatment in treatments:
+            factors = _grammar_factors_from_treatment(treatment)
+            self.assertIsNotNone(factors)
+            combo = (
+                factors["planning"],
+                factors["observation"],
+                factors["verification"],
+                factors["recovery"],
+                factors["tool_cap"],
+            )
+            seen_combinations.add(combo)
+
+        # The 72-cell grammar should produce 72 unique factor combinations.
+        self.assertEqual(len(seen_combinations), 72)
+
+    def test_one_hot_from_meta_grammar_export_matches_factors(self) -> None:
+        """Verify consistency between raw factor labels and the one-hot
+        encoding produced by ``export_grammar_factors()`` from meta_grammar.
+
+        The dataset exports *raw* factor labels; the model computes one-hot
+        from them. This test ensures the two representations agree.
+        """
+        treatment = self._unbrowser_grammar_treatment(42)
+        raw = _grammar_factors_from_treatment(treatment)
+        onehot = export_grammar_factors(treatment)
+
+        self.assertEqual(raw["planning"], onehot["factor_labels"]["planning"])
+        self.assertEqual(raw["observation"], onehot["factor_labels"]["observation"])
+        self.assertEqual(raw["verification"], onehot["factor_labels"]["verification"])
+        self.assertEqual(raw["recovery"], onehot["factor_labels"]["recovery"])
+        self.assertEqual(raw["tool_cap"], onehot["factor_labels"]["tool_cap"])
+
+        # The one-hot vectors have the right dimensions.
+        self.assertEqual(len(onehot["one_hot"]["planning"]), 3)
+        self.assertEqual(len(onehot["one_hot"]["observation"]), 3)
+        self.assertEqual(len(onehot["one_hot"]["verification"]), 2)
+        self.assertEqual(len(onehot["one_hot"]["recovery"]), 2)
+        self.assertEqual(len(onehot["one_hot"]["tool_cap"]), 2)
+
+    def test_deterministic_export_with_grammar_treatments(self) -> None:
+        """Multiple exports with the same grammar treatment produce the
+        same model_input.treatment (dataset determinism)."""
+        treatment = self._unbrowser_grammar_treatment(0)
+        task = {
+            "prompt": "task",
+            "contract": [],
+            "family": "unbrowser_fixture",
+            "template_id": "single_page_extraction",
+            "difficulty": "easy",
+            "public_metadata": {},
+        }
+        first = build_model_input(
+            task, treatment.id, treatment.version, treatment=treatment
+        )
+        second = build_model_input(
+            task, treatment.id, treatment.version, treatment=treatment
+        )
+        self.assertEqual(first, second)
 
 
 if __name__ == "__main__":
