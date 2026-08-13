@@ -742,6 +742,40 @@ add frozen negative-control (shuffled context) evaluator
 | 2026-08-10 | Superseded all still-unused intermediate headroom manifests before any v2 canary or pilot outcome. Excluded the two forced-recovery tasks from outcome/cost headroom; moved headroom thresholds to 2/10 neutral stable-disagreement tasks and 1/10 uniform-tie cross-replica lift; made recovery eligibility exact and task-specific; required planning/observation adherence per factor level and verification opportunities; assigned 24 explicit panel seeds with fixed sampling parameters; counterbalanced replica chronology 6/6; captured sanitized outgoing-request receipts; and bound the Pi provider endpoint to exact remote executable/model paths and hashes. Current headroom manifest hash: `e7f257c48548245b3aaba965c81bff4e548c06fca06b16c84e10eadf2daf0931`. | Prevent designed recovery behavior, label order, provider defaults, endpoint drift, or pooled manipulation rates from manufacturing a pilot pass. |
 | 2026-08-10 | Ran the single permitted v2 operational canary outside all pilot coordinates: `T_canary`, `distractor_recovery`, task seed `990000001`, sampling seed `1900000001`, policy `ub-direct-structure_first-submit_directly-diagnose_retry_once-expanded@2-a18fd8c7`. Verification passed with output-token cost `2626`, 11 admitted calls, exact HTTP-503 probe detection, Unbrowser `0.0.19`, and the frozen sampling receipt. Export produced exactly one `canary_excluded` row with 32-D task features, 13-D treatment features, and no leakage violations. Adherence truthfully recorded planning/probe/submit/cap as passing and structure-first/immediate-retry as failing. No frozen threshold or pilot coordinate changed after observing it. | Validate operational plumbing and manipulation instrumentation only; this row is permanently inadmissible as headroom or allocator-effectiveness evidence. |
 
+### 17.1 Frozen headroom-pilot outcome
+
+The pilot for manifest
+`e7f257c48548245b3aaba965c81bff4e548c06fca06b16c84e10eadf2daf0931`
+completed all 24 panels and 96 unique attempts with zero infrastructure errors,
+zero model-runtime failures, and a passing runtime preflight. Dataset export produced
+96 `pilot_excluded` rows and no other split. The immutable machine-readable gate
+report is [`m3-headroom-pilot-e7f257c4-gate.json`](m3-headroom-pilot-e7f257c4-gate.json).
+
+The frozen gate result is **no-go**. Completeness, non-degeneracy, stable
+disagreement (4/10 neutral tasks), output-token cost range (1.8299), and all
+planning levels passed. The following preregistered checks failed:
+
+- repeat discordance was 9/48 (18.75%), above the 10% ceiling;
+- cross-replica lift was -0.5833 expected successes, below the +1 requirement;
+- observation adherence was 62.5% for `text_first`, 20.83% for
+  `structure_first`, and 50% for `targeted_query_first`, all below 75%;
+- recovery eligibility was 8 for `diagnose_retry_once` and 7 for `fail_fast`,
+  with a 12.5-point retry-rate difference rather than the required 25 points;
+- both verification levels had a 0% repeated-final-read rate, yielding no
+  separation; and
+- the frozen report measured tool-cap compliance as 28/96 (29.17%), below 100%.
+
+A post-outcome raw-event audit found that Pi serializes the hard budget
+extension's blocked calls as `is_error=true`, `details={}`, and `Operation
+aborted`, dropping the explicit rejection reason. This caused 67 blocked calls
+to be counted as admitted. A position-aware correction classifies 89/96 attempts
+as compliant; seven attempts still contain one genuinely admitted call over cap
+because extension resource reloads reset module-local state. The post-pilot fix
+persists the counter process-wide and recognizes the unmarked blocked event.
+Neither correction changes the no-go: corrected cap compliance remains below
+100%, and five other frozen checks independently fail. The original report is
+retained unchanged rather than recomputed post hoc.
+
 No revisions are permitted after the final-policy stage is unlocked.
 
 ## 18. Plain-Language Reference

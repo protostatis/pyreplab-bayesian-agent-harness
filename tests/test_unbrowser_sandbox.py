@@ -27,24 +27,21 @@ class UnbrowserSandboxTest(unittest.TestCase):
         with self.assertRaises(FileNotFoundError):
             UnbrowserSandbox("/nonexistent/unbrowser-binary")
 
-    def test_rejects_nonpositive_timeout(self) -> None:
-        with tempfile.TemporaryDirectory() as d:
-            binary = self._fake_binary(d)
-            with self.assertRaisesRegex(ValueError, "positive"):
-                UnbrowserSandbox(binary, command_timeout=0)
-            with self.assertRaisesRegex(ValueError, "positive"):
-                UnbrowserSandbox(binary, command_timeout=-5)
-
     # -- build_command shape --
 
-    def test_build_command_starts_with_timeout(self) -> None:
+    def test_build_command_starts_with_bwrap(self) -> None:
         with tempfile.TemporaryDirectory() as d:
             binary = self._fake_binary(d)
             sandbox = UnbrowserSandbox(binary)
             cmd = sandbox.build_command()
-            self.assertEqual(cmd[0], "timeout")
-            # timeout --kill-after=5s <seconds>s bwrap ...
-            self.assertTrue(cmd[1].startswith("--kill-after"))
+            self.assertEqual(cmd[0], "bwrap")
+
+    def test_build_command_has_no_process_wide_timeout(self) -> None:
+        with tempfile.TemporaryDirectory() as d:
+            binary = self._fake_binary(d)
+            cmd = UnbrowserSandbox(binary).build_command()
+            self.assertNotIn("timeout", cmd)
+            self.assertFalse(any(token.startswith("--kill-after") for token in cmd))
 
     def test_build_command_includes_bwrap(self) -> None:
         with tempfile.TemporaryDirectory() as d:
@@ -81,8 +78,8 @@ class UnbrowserSandboxTest(unittest.TestCase):
             self.assertNotIn("--unshare-mount", cmd)
 
     @unittest.skipUnless(
-        shutil.which("bwrap") and shutil.which("timeout") and Path("/bin/true").is_file(),
-        "requires bwrap, timeout, and /bin/true",
+        shutil.which("bwrap") and Path("/bin/true").is_file(),
+        "requires bwrap and /bin/true",
     )
     def test_built_command_is_accepted_by_installed_bubblewrap(self) -> None:
         result = subprocess.run(
@@ -133,18 +130,6 @@ class UnbrowserSandboxTest(unittest.TestCase):
             sandbox = UnbrowserSandbox(binary)
             cmd = sandbox.build_command()
             self.assertNotIn("--unshare-all", cmd)
-
-    def test_different_timeouts_produce_different_timeout_values(self) -> None:
-        with tempfile.TemporaryDirectory() as d:
-            binary = self._fake_binary(d)
-            s1 = UnbrowserSandbox(binary, command_timeout=30)
-            s2 = UnbrowserSandbox(binary, command_timeout=60)
-            cmd1 = s1.build_command()
-            cmd2 = s2.build_command()
-            self.assertNotEqual(cmd1, cmd2)
-            # The timeout value appears in the command after --kill-after=5s.
-            self.assertIn("30s", cmd1)
-            self.assertIn("60s", cmd2)
 
     def test_fresh_dev_and_proc(self) -> None:
         with tempfile.TemporaryDirectory() as d:
@@ -252,13 +237,6 @@ class UnbrowserSandboxTest(unittest.TestCase):
                     cmd_str,
                     f"canary path {cp!r} found as writable mount",
                 )
-
-    def test_stores_command_timeout(self) -> None:
-        with tempfile.TemporaryDirectory() as d:
-            binary = self._fake_binary(d)
-            sandbox = UnbrowserSandbox(binary, command_timeout=45)
-            self.assertEqual(sandbox.command_timeout, 45)
-
 
 if __name__ == "__main__":
     unittest.main()

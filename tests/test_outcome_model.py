@@ -734,5 +734,58 @@ def torch_is_finite(tensor) -> bool:
     return bool(torch.isfinite(tensor).all())
 
 
+class FailClosedSplitTest(unittest.TestCase):
+    """Excluded/unknown/missing splits must fail closed, never map to train."""
+
+    def test_group_by_split_rejects_excluded_splits(self) -> None:
+        for split in ("canary_excluded", "pilot_excluded"):
+            with self.subTest(split=split):
+                with self.assertRaises(ValueError):
+                    om.group_by_split([make_row(1, "direct", split)])
+
+    def test_group_by_split_rejects_unknown_split(self) -> None:
+        with self.assertRaises(ValueError):
+            om.group_by_split([make_row(1, "direct", "bogus")])
+
+    def test_group_by_split_rejects_missing_split(self) -> None:
+        row = make_row(1, "direct", "train")
+        del row["split"]
+        with self.assertRaises(ValueError):
+            om.group_by_split([row])
+
+    def test_group_by_split_preserves_normal_splits(self) -> None:
+        rows = [make_row(i, "direct", "train") for i in range(3)]
+        rows += [make_row(i, "direct", "validation") for i in range(3, 5)]
+        rows += [make_row(5, "direct", "test")]
+        groups = om.group_by_split(rows)
+        self.assertEqual(len(groups["train"]), 3)
+        self.assertEqual(len(groups["validation"]), 2)
+        self.assertEqual(len(groups["test"]), 1)
+
+
+@TORCH_REQUIRED
+class TrainFailClosedTest(unittest.TestCase):
+    def test_train_rejects_canary_excluded_rows(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            dataset = root / "dataset.jsonl"
+            rows = [make_row(i, "direct", "train") for i in range(20)]
+            rows.append(make_row(999, "direct", "canary_excluded"))
+            dataset.write_text(
+                "".join(json.dumps(row, sort_keys=True) + "\n" for row in rows),
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(ValueError, "split"):
+                om.train_model(
+                    dataset,
+                    root / "artifacts",
+                    epochs=1,
+                    batch_size=8,
+                    max_vocab=100,
+                    max_tokens=16,
+                    verbose=False,
+                )
+
+
 if __name__ == "__main__":
     unittest.main()

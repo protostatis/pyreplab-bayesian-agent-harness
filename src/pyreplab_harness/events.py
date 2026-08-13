@@ -15,6 +15,43 @@ def _contains_tool_limit_rejection(value: Any) -> bool:
     return "tool call limit" in lowered or "unbrowser call limit" in lowered
 
 
+def _is_operation_aborted_result(value: Any) -> bool:
+    """Return whether Pi reduced a blocked tool call to its exact abort result."""
+    if not isinstance(value, dict) or value.get("details") != {}:
+        return False
+    content = value.get("content")
+    return isinstance(content, list) and any(
+        isinstance(item, dict)
+        and item.get("type") == "text"
+        and item.get("text") == "Operation aborted"
+        for item in content
+    )
+
+
+def _is_pre_execution_rejection(value: Any) -> bool:
+    """Return whether Pi rejected a tool call before the tool executed."""
+    if not isinstance(value, dict) or value.get("details") != {}:
+        return False
+    content = value.get("content")
+    if not isinstance(content, list):
+        return False
+    texts = [
+        item.get("text")
+        for item in content
+        if isinstance(item, dict)
+        and item.get("type") == "text"
+        and isinstance(item.get("text"), str)
+    ]
+    return any(
+        text.startswith("Validation failed for tool ")
+        or (
+            text.startswith("Tool call \"")
+            and " was not executed: " in text
+        )
+        for text in texts
+    )
+
+
 def _planning_preamble_shape(text: str) -> dict[str, Any]:
     """Return marker/count features without retaining model-authored text."""
     lines = [line.strip() for line in text.splitlines() if line.strip()]
@@ -100,16 +137,19 @@ def normalize_pi_events(lines: str | Iterable[str]) -> dict[str, Any]:
             if texts:
                 final_text = "\n".join(texts)
         elif event_type == "tool_execution_end":
-            budget_rejected = _contains_tool_limit_rejection(event.get("result"))
+            result = event.get("result")
+            budget_rejected = _contains_tool_limit_rejection(result)
             if budget_rejected:
                 tool_limit_rejection_count += 1
             tool_executions.append(
                 {
                     "tool_call_id": event.get("toolCallId"),
                     "tool_name": event.get("toolName"),
-                    "result": event.get("result"),
+                    "result": result,
                     "is_error": event.get("isError", False),
                     "budget_rejected": budget_rejected,
+                    "operation_aborted": _is_operation_aborted_result(result),
+                    "pre_execution_rejected": _is_pre_execution_rejection(result),
                 }
             )
 

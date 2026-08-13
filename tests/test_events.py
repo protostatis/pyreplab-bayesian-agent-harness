@@ -86,6 +86,115 @@ class EventNormalizerTest(unittest.TestCase):
         self.assertEqual(normalized["tool_limit_rejection_count"], 1)
         self.assertTrue(normalized["tool_executions"][0]["budget_rejected"])
 
+    def test_marks_operation_aborted_without_calling_it_a_budget_rejection(self) -> None:
+        raw = json.dumps(
+            {
+                "type": "tool_execution_end",
+                "toolCallId": "t1",
+                "toolName": "bash",
+                "isError": True,
+                "result": {
+                    "content": [{"type": "text", "text": "Operation aborted"}],
+                    "details": {},
+                },
+            }
+        )
+        normalized = normalize_pi_events(raw)
+        execution = normalized["tool_executions"][0]
+        self.assertTrue(execution["operation_aborted"])
+        self.assertFalse(execution["budget_rejected"])
+
+    def test_does_not_mark_incidental_operation_aborted_text(self) -> None:
+        raw = json.dumps(
+            {
+                "type": "tool_execution_end",
+                "toolCallId": "t1",
+                "toolName": "bash",
+                "isError": True,
+                "result": {
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": "Remote operation aborted unexpectedly",
+                        }
+                    ],
+                    "details": {},
+                },
+            }
+        )
+        normalized = normalize_pi_events(raw)
+        self.assertFalse(
+            normalized["tool_executions"][0]["operation_aborted"]
+        )
+
+    def test_marks_schema_validation_as_pre_execution_rejected(self) -> None:
+        raw = json.dumps({
+            "type": "tool_execution_end",
+            "toolCallId": "t1",
+            "toolName": "unbrowser",
+            "isError": True,
+            "result": {
+                "content": [{
+                    "type": "text",
+                    "text": "Validation failed for tool \"unbrowser\": bad action",
+                }],
+                "details": {},
+            },
+        })
+        execution = normalize_pi_events(raw)["tool_executions"][0]
+        self.assertTrue(execution["pre_execution_rejected"])
+
+    def test_marks_truncated_arguments_as_pre_execution_rejected(self) -> None:
+        raw = json.dumps({
+            "type": "tool_execution_end",
+            "toolCallId": "t1",
+            "toolName": "bash",
+            "isError": True,
+            "result": {
+                "content": [{
+                    "type": "text",
+                    "text": "Tool call \"bash\" was not executed: arguments were truncated.",
+                }],
+                "details": {},
+            },
+        })
+        execution = normalize_pi_events(raw)["tool_executions"][0]
+        self.assertTrue(execution["pre_execution_rejected"])
+
+    def test_does_not_mark_tool_authored_validation_text(self) -> None:
+        raw = json.dumps({
+            "type": "tool_execution_end",
+            "toolCallId": "t1",
+            "toolName": "bash",
+            "isError": True,
+            "result": {
+                "content": [{
+                    "type": "text",
+                    "text": "App validation failed for tool input",
+                }],
+                "details": {},
+            },
+        })
+        execution = normalize_pi_events(raw)["tool_executions"][0]
+        self.assertFalse(execution["pre_execution_rejected"])
+
+    def test_does_not_mark_pi_text_with_tool_details(self) -> None:
+        raw = json.dumps({
+            "type": "tool_execution_end",
+            "toolCallId": "t1",
+            "toolName": "bash",
+            "isError": True,
+            "result": {
+                "content": [{
+                    "type": "text",
+                    "text": "Validation failed for tool \"bash\": app output",
+                }],
+                "details": {"exit_code": 1},
+            },
+        })
+        execution = normalize_pi_events(raw)["tool_executions"][0]
+        self.assertFalse(execution["pre_execution_rejected"])
+
     def test_summarizes_pre_tool_planning_without_retaining_text(self) -> None:
         raw = json.dumps(
             {

@@ -11,7 +11,19 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
 const DEFAULT_TOOL_LIMIT = 8;
-const BUDGETED_TOOLS = new Set(["bash", "unbrowser"]);
+const BUDGETED_TOOLS = new Set(["bash", "unbrowser", "semantic_table", "semantic_form"]);
+
+type BudgetGlobal = typeof globalThis & {
+  __pyreplabGymBudgetV2State?: { admittedCalls: number };
+};
+
+function budgetState(): { admittedCalls: number } {
+  const root = globalThis as BudgetGlobal;
+  if (!root.__pyreplabGymBudgetV2State) {
+    root.__pyreplabGymBudgetV2State = { admittedCalls: 0 };
+  }
+  return root.__pyreplabGymBudgetV2State;
+}
 
 function commandLineLimit(): number | undefined {
   const flag = "--gym-tool-limit";
@@ -50,21 +62,19 @@ function configuredLimit(pi: ExtensionAPI): number {
 }
 
 export default function (pi: ExtensionAPI): void {
-  let admittedCalls = 0;
-
   pi.on("session_start", (event) => {
     // Model/provider extensions can trigger a resource reload after the first
-    // turn. Resetting on that reload grants an accidental extra tool call.
-    // This extension instance is session-scoped, so only startup initializes
-    // the counter.
-    if (event.reason === "startup") admittedCalls = 0;
+    // turn. Keep state on globalThis so reloading this module cannot grant an
+    // accidental extra tool call; each Pi process handles exactly one attempt.
+    if (event.reason === "startup") budgetState().admittedCalls = 0;
   });
 
   pi.on("tool_call", (event, ctx) => {
     if (!BUDGETED_TOOLS.has(event.toolName)) return;
 
     const limit = configuredLimit(pi);
-    if (admittedCalls >= limit) {
+    const state = budgetState();
+    if (state.admittedCalls >= limit) {
       // `terminate` is advisory and some provider/tool-loop combinations may
       // still request another turn. Abort the active agent operation as the
       // authoritative hard stop; verification will inspect the workspace that
@@ -77,11 +87,14 @@ export default function (pi: ExtensionAPI): void {
       };
     }
 
-    admittedCalls += 1;
+    state.admittedCalls += 1;
   });
 
   pi.on("tool_result", (event) => {
-    if (!BUDGETED_TOOLS.has(event.toolName) || admittedCalls < configuredLimit(pi)) return;
+    if (
+      !BUDGETED_TOOLS.has(event.toolName)
+      || budgetState().admittedCalls < configuredLimit(pi)
+    ) return;
     return {
       content: [
         ...event.content,

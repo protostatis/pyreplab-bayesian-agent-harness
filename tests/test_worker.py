@@ -1,11 +1,15 @@
 from __future__ import annotations
 
+import argparse
+import io
+import json
 import unittest
 from unittest import mock
 
 from pyreplab_harness.sandbox import SandboxResult
 from pyreplab_harness import worker
-from pyreplab_harness.worker import WorkerConfig, handle_request
+from pyreplab_harness.unbrowser_rpc import UnbrowserProtocolError
+from pyreplab_harness.worker import WorkerConfig, handle_request, serve
 
 
 class FakeSandbox:
@@ -26,6 +30,17 @@ class FakeUnbrowser:
     def execute(self, params: dict) -> dict:
         self.calls.append(params)
         return {"action": params["action"], "result": "Example Domain"}
+
+    def close(self) -> None:
+        pass
+
+
+class FailingUnbrowser(FakeUnbrowser):
+    def execute(self, params: dict) -> dict:
+        raise UnbrowserProtocolError(
+            "unbrowser process connection broken (exit_code=124)",
+            infrastructure_error=True,
+        )
 
 
 class WorkerProtocolTest(unittest.TestCase):
@@ -68,6 +83,66 @@ class WorkerProtocolTest(unittest.TestCase):
             with self.assertRaisesRegex(OSError, "busy"):
                 worker.ensure_fixture_server()
         self.assertIsNone(worker._fixture_server_instance)
+
+    def test_worker_serializes_infrastructure_failure_marker(self) -> None:
+        output = io.StringIO()
+        serve(
+            FakeSandbox(),  # type: ignore[arg-type]
+            io.StringIO(json.dumps({
+                "id": 7,
+                "method": "unbrowser",
+                "params": {"action": "navigate"},
+            }) + "\n"),
+            output,
+            30,
+            FailingUnbrowser(),  # type: ignore[arg-type]
+        )
+        response = json.loads(output.getvalue())
+        self.assertFalse(response["ok"])
+        self.assertTrue(response["error"]["infrastructure_error"])
+
+
+class WorkerRequiredObservationTest(unittest.TestCase):
+    """Tests for the --unbrowser-required-first-observation CLI plumbing."""
+
+    def test_arg_registered_with_choices(self) -> None:
+        parser = argparse.ArgumentParser()
+        worker.add_worker_arguments(parser)
+        args = parser.parse_args([
+            "--root", "/root",
+            "--workspace", "/workspace",
+            "--unbrowser-required-first-observation", "text",
+        ])
+        self.assertEqual(args.unbrowser_required_first_observation, "text")
+
+    def test_arg_rejects_invalid_choice(self) -> None:
+        parser = argparse.ArgumentParser()
+        worker.add_worker_arguments(parser)
+        with self.assertRaises(SystemExit):
+            parser.parse_args([
+                "--root", "/root",
+                "--workspace", "/workspace",
+                "--unbrowser-required-first-observation", "invalid",
+            ])
+
+    def test_arg_accepts_blockmap(self) -> None:
+        parser = argparse.ArgumentParser()
+        worker.add_worker_arguments(parser)
+        args = parser.parse_args([
+            "--root", "/root",
+            "--workspace", "/workspace",
+            "--unbrowser-required-first-observation", "blockmap",
+        ])
+        self.assertEqual(args.unbrowser_required_first_observation, "blockmap")
+
+    def test_arg_defaults_to_none(self) -> None:
+        parser = argparse.ArgumentParser()
+        worker.add_worker_arguments(parser)
+        args = parser.parse_args([
+            "--root", "/root",
+            "--workspace", "/workspace",
+        ])
+        self.assertIsNone(args.unbrowser_required_first_observation)
 
 
 if __name__ == "__main__":

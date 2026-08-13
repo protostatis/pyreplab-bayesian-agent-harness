@@ -201,6 +201,13 @@ class DatasetJoinTest(unittest.TestCase):
             self.assertEqual(row["pilot_manifest_hash"], "a" * 64)
             self.assertEqual(row["pilot_panel_id"], f"{task.id}/replica=1")
             self.assertNotIn("task_role", row["model_input"])
+            # Excluded rows carry a governance_role equal to the split and a
+            # fully-false eligibility object.
+            self.assertEqual(row["governance_role"], "pilot_excluded")
+            self.assertEqual(
+                row["eligibility"],
+                {"training": False, "calibration": False, "development": False, "final": False},
+            )
 
     def test_canary_task_is_exported_to_excluded_split(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -231,6 +238,11 @@ class DatasetJoinTest(unittest.TestCase):
             self.assertEqual(row["task_role"], "T_canary")
             self.assertEqual(row["split"], "canary_excluded")
             self.assertEqual(row["sampling_seed"], 2026082999)
+            self.assertEqual(row["governance_role"], "canary_excluded")
+            self.assertEqual(
+                row["eligibility"],
+                {"training": False, "calibration": False, "development": False, "final": False},
+            )
 
 
 class LeakageTest(unittest.TestCase):
@@ -1279,6 +1291,205 @@ class GrammarCnpExportTest(unittest.TestCase):
             self.assertIn(key, tr, f"missing treatment key {key}")
         self.assertEqual(tr["tool_interface"], _UNBROWSER_GRAMMAR_INTERFACE)
         self.assertEqual(tr["enforced_tool_call_cap"], treatment.tool_call_limit)
+
+
+class NewInterfaceIdentityFreeTest(unittest.TestCase):
+    """Tests that the two new observation-enforcement interfaces use the
+    same identity-free grammar model_input path."""
+
+    @staticmethod
+    def _grammar_treatment_with_interface(tool_interface: str) -> TreatmentSpec:
+        for treatment in enumerate_unbrowser_grammar():
+            return TreatmentSpec(
+                id=treatment.id,
+                version=treatment.version,
+                system_prompt=treatment.system_prompt,
+                allowed_tools=treatment.allowed_tools,
+                max_output_tokens=treatment.max_output_tokens,
+                tool_call_limit=treatment.tool_call_limit,
+                command_timeout_seconds=treatment.command_timeout_seconds,
+                wall_time_limit_seconds=treatment.wall_time_limit_seconds,
+                tool_interface=tool_interface,
+                generator_metadata=dict(treatment.generator_metadata),
+            )
+        raise AssertionError("no grammar treatment found")
+
+    @staticmethod
+    def _task_dict() -> dict:
+        return {
+            "prompt": "Extract verification key from fixture page.",
+            "contract": ["Navigate to the fixture page.", "Extract the code."],
+            "family": "unbrowser_fixture",
+            "template_id": "single_page_extraction",
+            "difficulty": "easy",
+            "public_metadata": {
+                "fixture_url": "http://127.0.0.1:18090/fixture/7/easy",
+            },
+        }
+
+    def test_text_first_uses_identity_free_cnp_schema(self) -> None:
+        treatment = self._grammar_treatment_with_interface(
+            "native_bash_unbrowser_interactive_text_first_v1"
+        )
+        task = self._task_dict()
+        model_input = build_model_input(
+            task, treatment.id, treatment.version, treatment=treatment
+        )
+        # CNP schema: task/treatment sub-dicts, no policy_id/policy_version in model_input.
+        self.assertNotIn("policy_id", model_input)
+        self.assertNotIn("policy_version", model_input)
+        self.assertIn("task", model_input)
+        self.assertIn("treatment", model_input)
+        self.assertIn("task_embedding", model_input["task"])
+        self.assertIn("grammar_factors", model_input["treatment"])
+        self.assertIn("grammar_factor_vector", model_input["treatment"])
+        self.assertEqual(
+            model_input["treatment"]["tool_interface"],
+            "native_bash_unbrowser_interactive_text_first_v1",
+        )
+
+    def test_structure_first_uses_identity_free_cnp_schema(self) -> None:
+        treatment = self._grammar_treatment_with_interface(
+            "native_bash_unbrowser_interactive_structure_first_v1"
+        )
+        task = self._task_dict()
+        model_input = build_model_input(
+            task, treatment.id, treatment.version, treatment=treatment
+        )
+        self.assertNotIn("policy_id", model_input)
+        self.assertNotIn("policy_version", model_input)
+        self.assertIn("task", model_input)
+        self.assertIn("treatment", model_input)
+        self.assertIn("task_embedding", model_input["task"])
+        self.assertIn("grammar_factors", model_input["treatment"])
+        self.assertIn("grammar_factor_vector", model_input["treatment"])
+
+    def test_both_new_interfaces_excluded_identity_from_model_input(self) -> None:
+        FORBIDDEN = {"policy_id", "policy_version", "bundle_id", "bundle_hash"}
+        for iface in (
+            "native_bash_unbrowser_interactive_text_first_v1",
+            "native_bash_unbrowser_interactive_structure_first_v1",
+        ):
+            treatment = self._grammar_treatment_with_interface(iface)
+            task = self._task_dict()
+            model_input = build_model_input(
+                task, treatment.id, treatment.version, treatment=treatment
+            )
+            for key in FORBIDDEN:
+                self.assertNotIn(key, model_input, f"{iface} leaked {key}")
+            # System prompt must not appear.
+            serialized = json.dumps(model_input, sort_keys=True)
+            self.assertNotIn(treatment.system_prompt, serialized)
+
+
+class SemanticSpecialistModelInputTest(unittest.TestCase):
+    """Tests that the two semantic specialist interfaces (DDL-1 table / DDL-2
+    form) expose a structured capability descriptor in the generic
+    ``model_input.treatment``."""
+
+    @staticmethod
+    def _semantic_treatment(
+        interface: str,
+        capability: str,
+        parent_bundle_id: str,
+        substrate: str,
+    ) -> TreatmentSpec:
+        return TreatmentSpec(
+            id="semantic-specialist",
+            version="1",
+            system_prompt="Capability: specialist_assigned. Safety: workspace only.",
+            allowed_tools=("bash", "unbrowser", "semantic_table"),
+            max_output_tokens=4096,
+            tool_call_limit=12,
+            command_timeout_seconds=60,
+            wall_time_limit_seconds=600,
+            tool_interface=interface,
+            generator_metadata={
+                "capability": capability,
+                "parent_bundle_id": parent_bundle_id,
+                "substrate": substrate,
+            },
+        )
+
+    @staticmethod
+    def _task_dict() -> dict:
+        return {
+            "prompt": "Extract the fixture table.",
+            "contract": ["Navigate.", "Extract."],
+            "family": "unbrowser_fixture",
+            "template_id": "table_filter_sort",
+            "difficulty": "easy",
+            "public_metadata": {},
+        }
+
+    @staticmethod
+    def _legacy_bash_treatment() -> TreatmentSpec:
+        return TreatmentSpec(
+            id="test-legacy",
+            version="1",
+            system_prompt="Plan briefly, execute, verify.",
+            allowed_tools=("bash",),
+            max_output_tokens=1024,
+            tool_call_limit=4,
+            command_timeout_seconds=30,
+            wall_time_limit_seconds=300,
+        )
+
+    def test_table_interface_exposes_structured_semantic_descriptor(self) -> None:
+        treatment = self._semantic_treatment(
+            "native_bash_unbrowser_semantic_table_v1",
+            "table_specialist",
+            "parent-table-001",
+            "public_html",
+        )
+        model_input = build_model_input(
+            self._task_dict(), treatment.id, treatment.version, treatment=treatment
+        )
+        # Still the generic path (no CNP identity-free schema).
+        self.assertIn("policy_id", model_input)
+        semantic = model_input["treatment"]["semantic"]
+        self.assertEqual(
+            semantic,
+            {
+                "capability": "table_specialist",
+                "parent_bundle_id": "parent-table-001",
+                "substrate": "public_html",
+            },
+        )
+
+    def test_form_interface_exposes_structured_semantic_descriptor(self) -> None:
+        treatment = self._semantic_treatment(
+            "native_bash_unbrowser_semantic_form_v1",
+            "form_specialist",
+            "parent-form-001",
+            "public_html",
+        )
+        model_input = build_model_input(
+            self._task_dict(), treatment.id, treatment.version, treatment=treatment
+        )
+        self.assertEqual(
+            model_input["treatment"]["semantic"],
+            {
+                "capability": "form_specialist",
+                "parent_bundle_id": "parent-form-001",
+                "substrate": "public_html",
+            },
+        )
+
+    def test_non_semantic_treatment_has_no_semantic_descriptor(self) -> None:
+        treatment = self._legacy_bash_treatment()
+        model_input = build_model_input(
+            self._task_dict(), treatment.id, treatment.version, treatment=treatment
+        )
+        self.assertIn("treatment", model_input)
+        self.assertNotIn("semantic", model_input["treatment"])
+
+    def test_grammar_treatment_has_no_semantic_descriptor(self) -> None:
+        treatment = enumerate_unbrowser_grammar()[0]
+        model_input = build_model_input(
+            self._task_dict(), treatment.id, treatment.version, treatment=treatment
+        )
+        self.assertNotIn("semantic", model_input["treatment"])
 
 
 if __name__ == "__main__":

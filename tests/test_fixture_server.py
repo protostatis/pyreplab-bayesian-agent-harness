@@ -18,6 +18,7 @@ from pyreplab_harness.fixture_templates import (
     TEMPLATES,
     generate_nonce,
 )
+from pyreplab_harness.routing_fixtures import build_stage_b_design
 
 
 class FixtureServerTest(unittest.TestCase):
@@ -364,6 +365,80 @@ class FixtureServerTest(unittest.TestCase):
         srv.stop()
         # Should not raise
         srv.stop()
+
+    # ------------------------------------------------------------------
+    # Stage-B routing route (/routing/<fixture_id>)
+    # ------------------------------------------------------------------
+
+    def test_routing_route_serves_initial_html(self) -> None:
+        coord = build_stage_b_design()[0]
+        url = self._server.routing_url_for(coord["fixture_id"])
+        code, body = self._get(url)
+        self.assertEqual(code, 200)
+        self.assertIn("<!DOCTYPE html>", body)
+        self.assertIn("<table", body)
+        self.assertIn("<form", body)
+
+    def test_routing_route_is_same_origin_and_opaque(self) -> None:
+        coord = build_stage_b_design()[0]
+        url = self._server.routing_url_for(coord["fixture_id"])
+        self.assertTrue(url.startswith(self._server.base_url + "/routing/"))
+        # The route reveals no template/seed/difficulty/stratum.
+        self.assertNotIn(str(coord["seed"]), url)
+        self.assertNotIn(coord["stratum"], url)
+
+    def test_routing_unknown_id_returns_404(self) -> None:
+        url = f"{self._server.base_url}/routing/does-not-exist"
+        code, body = self._get(url)
+        self.assertEqual(code, 404)
+        self.assertIn("Unknown routing fixture id", body)
+
+    def test_routing_malformed_path_returns_404(self) -> None:
+        url = f"{self._server.base_url}/routing/a/b"
+        code, _ = self._get(url)
+        self.assertEqual(code, 404)
+
+    def test_routing_route_is_deterministic(self) -> None:
+        coord = build_stage_b_design()[0]
+        url = self._server.routing_url_for(coord["fixture_id"])
+        _, body1 = self._get(url)
+        _, body2 = self._get(url)
+        self.assertEqual(body1, body2)
+
+    def test_routing_oracle_and_nonce_helpers(self) -> None:
+        coord = build_stage_b_design()[0]
+        oracle = self._server.routing_oracle_for(coord["fixture_id"])
+        self.assertEqual(oracle["nonce"], coord["nonce"])
+        self.assertEqual(oracle["expected_answer"], coord["nonce"])
+        self.assertEqual(
+            self._server.routing_nonce_for(coord["fixture_id"]),
+            coord["nonce"],
+        )
+        with self.assertRaises(KeyError):
+            self._server.routing_oracle_for("does-not-exist")
+
+    def test_routing_query_transition_serves_filtered_table(self) -> None:
+        coord = next(
+            c for c in build_stage_b_design() if c["stratum"] == "pure_table"
+        )
+        base = self._server.routing_url_for(coord["fixture_id"])
+        dept = coord["oracle"]["target_row_department"]
+        url = f"{base}?{urllib.parse.urlencode({'filter': dept})}"
+        code, body = self._get(url)
+        self.assertEqual(code, 200)
+        self.assertIn(coord["nonce"], body)
+
+    def test_routing_form_submission_transition(self) -> None:
+        coord = next(
+            c for c in build_stage_b_design()
+            if c["stratum"] == "pure_form"
+        )
+        base = self._server.routing_url_for(coord["fixture_id"])
+        values = dict(coord["oracle"]["correct_form_values"])
+        url = f"{base}?{urllib.parse.urlencode(values)}"
+        code, body = self._get(url)
+        self.assertEqual(code, 200)
+        self.assertIn(coord["nonce"], body)
 
     # ------------------------------------------------------------------
     # Helpers

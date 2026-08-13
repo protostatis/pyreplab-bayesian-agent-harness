@@ -1,0 +1,105 @@
+{
+  "checks": {
+    "complete": true,
+    "cost_range": true,
+    "cross_replica_lift": false,
+    "nondegenerate": true,
+    "observation_adherence": false,
+    "planning_adherence": true,
+    "recovery_separation": false,
+    "repeat_concordance": false,
+    "stable_disagreement": true,
+    "tool_cap_compliance": false,
+    "verification_separation": false
+  },
+  "completeness": {
+    "attempts": 96,
+    "extra_panels": [],
+    "infrastructure_errors": 0,
+    "missing_panels": [],
+    "records": 24,
+    "runtime_preflight": true,
+    "structural_errors": [],
+    "unique_attempt_ids": 96
+  },
+  "gate": "m3-headroom-pilot-v1",
+  "headroom": {
+    "all_task_successes_by_policy": {
+      "ub-brief_plan-structure_first-final_reobserve-fail_fast-expanded@2-3d2c51ee": 12,
+      "ub-decompose-targeted_query_first-final_reobserve-diagnose_retry_once-lean@2-61413415": 7,
+      "ub-direct-structure_first-submit_directly-diagnose_retry_once-expanded@2-a18fd8c7": 7,
+      "ub-direct-text_first-submit_directly-fail_fast-lean@2-7ad8d366": 7
+    },
+    "best_fixed_successes": 6.0,
+    "cost_mean_ratio": 1.8298837209302325,
+    "cross_replica_lift_successes": -0.5833333333333339,
+    "discordant_policy_task_cells": 9,
+    "headroom_excluded_templates": [
+      "distractor_recovery"
+    ],
+    "headroom_task_count": 10,
+    "policy_mean_output_tokens": {
+      "ub-brief_plan-structure_first-final_reobserve-fail_fast-expanded@2-3d2c51ee": 2436.95,
+      "ub-decompose-targeted_query_first-final_reobserve-diagnose_retry_once-lean@2-61413415": 2147.65,
+      "ub-direct-structure_first-submit_directly-diagnose_retry_once-expanded@2-a18fd8c7": 3147.4,
+      "ub-direct-text_first-submit_directly-fail_fast-lean@2-7ad8d366": 1720.0
+    },
+    "repeat_discordance_rate": 0.1875,
+    "stable_disagreement_tasks": 4,
+    "successes_by_policy": {
+      "ub-brief_plan-structure_first-final_reobserve-fail_fast-expanded@2-3d2c51ee": 12,
+      "ub-decompose-targeted_query_first-final_reobserve-diagnose_retry_once-lean@2-61413415": 7,
+      "ub-direct-structure_first-submit_directly-diagnose_retry_once-expanded@2-a18fd8c7": 7,
+      "ub-direct-text_first-submit_directly-fail_fast-lean@2-7ad8d366": 7
+    },
+    "two_direction_cross_replica_successes": 5.416666666666666
+  },
+  "manifest_hash": "e7f257c48548245b3aaba965c81bff4e548c06fca06b16c84e10eadf2daf0931",
+  "manipulation": {
+    "observation_adherence_rate": 0.3854166666666667,
+    "observation_adherence_rates": {
+      "structure_first": 0.20833333333333334,
+      "targeted_query_first": 0.5,
+      "text_first": 0.625
+    },
+    "planning_adherence_rate": 1.0,
+    "planning_adherence_rates": {
+      "brief_plan": 1.0,
+      "decompose": 1.0,
+      "direct": 1.0
+    },
+    "recovery_eligible_counts": {
+      "diagnose_retry_once": 8,
+      "fail_fast": 7
+    },
+    "recovery_rate_difference": 0.125,
+    "repeated_read_rates": {
+      "final_reobserve": 0.0,
+      "submit_directly": 0.0
+    },
+    "repeated_read_rates_itt": {
+      "final_reobserve": 0.0,
+      "submit_directly": 0.0
+    },
+    "same_tool_retry_rates": {
+      "diagnose_retry_once": 0.125,
+      "fail_fast": 0.0
+    },
+    "tool_cap_compliance_rate": 0.2916666666666667,
+    "verification_opportunity_counts": {
+      "final_reobserve": 19,
+      "submit_directly": 14
+    },
+    "verification_rate_difference": 0.0
+  },
+  "passed": false,
+  "reasons": [
+    "cross_replica_lift",
+    "observation_adherence",
+    "recovery_separation",
+    "repeat_concordance",
+    "tool_cap_compliance",
+    "verification_separation"
+  ],
+  "warning": "This gate establishes headroom and manipulation behavior only; it is not allocator-effectiveness evidence."
+}

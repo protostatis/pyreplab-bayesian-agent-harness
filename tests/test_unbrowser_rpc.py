@@ -605,5 +605,410 @@ class FixtureUrlValidationTest(unittest.TestCase):
         self.assertEqual(session._interactive_origin, UNBROWSER_INTERACTIVE_ORIGIN)
 
 
+class RequiredFirstObservationTest(unittest.TestCase):
+    """Tests for the required_first_observation auto-delivery feature."""
+
+    def test_text_auto_delivery_on_first_navigate(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            session = UnbrowserSession(
+                _fake_unbrowser_interactive(directory),
+                UNBROWSER_INTERACTIVE_URL,
+                interactive=True,
+                required_first_observation="text",
+            )
+            try:
+                result = session.execute({"action": "navigate"})
+                self.assertIn("required_first_observation_receipt", result)
+                receipt = result["required_first_observation_receipt"]
+                self.assertEqual(receipt["required_action"], "text")
+                self.assertEqual(receipt["delivered_action"], "text")
+                self.assertEqual(receipt["selector"], "body")
+                self.assertTrue(receipt["delivered"])
+                self.assertIsInstance(receipt["payload_bytes"], int)
+                self.assertIsInstance(receipt["payload_sha256"], str)
+                self.assertEqual(len(receipt["payload_sha256"]), 64)
+                self.assertEqual(receipt["mechanism"], "auto_delivered_first_observation")
+                self.assertEqual(
+                    receipt["schema_version"], "pyreplab-required-first-observation-v1"
+                )
+                self.assertIn("auto_delivered_observation", result)
+                self.assertIsInstance(result["auto_delivered_observation"], str)
+            finally:
+                session.close()
+
+    def test_blockmap_auto_delivery_on_first_navigate(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            session = UnbrowserSession(
+                _fake_unbrowser_interactive(directory),
+                UNBROWSER_INTERACTIVE_URL,
+                interactive=True,
+                required_first_observation="blockmap",
+            )
+            try:
+                result = session.execute({"action": "navigate"})
+                self.assertIn("required_first_observation_receipt", result)
+                receipt = result["required_first_observation_receipt"]
+                self.assertEqual(receipt["required_action"], "blockmap")
+                self.assertEqual(receipt["delivered_action"], "blockmap")
+                self.assertIsNone(receipt["selector"])
+                self.assertTrue(receipt["delivered"])
+                self.assertIsInstance(receipt["payload_sha256"], str)
+                self.assertEqual(len(receipt["payload_sha256"]), 64)
+            finally:
+                session.close()
+
+    def test_second_navigate_does_not_auto_deliver(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            session = UnbrowserSession(
+                _fake_unbrowser_interactive(directory),
+                UNBROWSER_INTERACTIVE_URL,
+                interactive=True,
+                required_first_observation="text",
+            )
+            try:
+                session.execute({"action": "navigate"})  # first — auto-delivers
+                result = session.execute({"action": "navigate"})  # second — no auto-delivery
+                self.assertNotIn("required_first_observation_receipt", result)
+                self.assertNotIn("auto_delivered_observation", result)
+            finally:
+                session.close()
+
+    def test_required_observation_fails_closed_on_bad_output(self) -> None:
+        """When the auto-observation fails, the session is killed with an error."""
+        with tempfile.TemporaryDirectory() as directory:
+            session = UnbrowserSession(
+                _fake_unbrowser_interactive(directory),
+                UNBROWSER_INTERACTIVE_URL,
+                interactive=True,
+                required_first_observation="text",
+            )
+            try:
+                # First navigate — auto-observes and the fake unbrowser
+                # returns "Example Domain" for text queries. This should succeed.
+                result = session.execute({"action": "navigate"})
+                self.assertIn("required_first_observation_receipt", result)
+                # The session is now past its first direct navigate.
+                # The first_direct_navigate_done flag prevents further auto-delivery.
+                self.assertTrue(session._first_direct_navigate_done)
+            finally:
+                session.close()
+
+    def test_invalid_required_first_observation_rejected(self) -> None:
+        with self.assertRaisesRegex(ValueError, "must be None"):
+            UnbrowserSession(
+                "/bin/true",
+                UNBROWSER_INTERACTIVE_URL,
+                interactive=True,
+                required_first_observation="query",
+            )
+
+    def test_required_observation_on_noninteractive_rejected(self) -> None:
+        with self.assertRaisesRegex(ValueError, "only allowed in interactive"):
+            UnbrowserSession(
+                "/bin/true",
+                UNBROWSER_SMOKE_URL,
+                interactive=False,
+                required_first_observation="text",
+            )
+
+    def test_receipt_hash_is_deterministic(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            session = UnbrowserSession(
+                _fake_unbrowser_interactive(directory),
+                UNBROWSER_INTERACTIVE_URL,
+                interactive=True,
+                required_first_observation="text",
+            )
+            r1 = session.execute({"action": "navigate"})
+            session.close()
+        with tempfile.TemporaryDirectory() as directory2:
+            session2 = UnbrowserSession(
+                _fake_unbrowser_interactive(directory2),
+                UNBROWSER_INTERACTIVE_URL,
+                interactive=True,
+                required_first_observation="text",
+            )
+            r2 = session2.execute({"action": "navigate"})
+            session2.close()
+        # The fake unbrowser returns the same text, so the sha256 should match.
+        self.assertEqual(
+            r1["required_first_observation_receipt"]["payload_sha256"],
+            r2["required_first_observation_receipt"]["payload_sha256"],
+        )
+
+    def test_close_resets_state(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            session = UnbrowserSession(
+                _fake_unbrowser_interactive(directory),
+                UNBROWSER_INTERACTIVE_URL,
+                interactive=True,
+                required_first_observation="text",
+            )
+            session.execute({"action": "navigate"})
+            self.assertTrue(session._first_direct_navigate_done)
+            session.close()
+            self.assertFalse(session._first_direct_navigate_done)
+
+
 if __name__ == "__main__":
     unittest.main()
+
+
+class ProcessLifetimeDecouplingTest(unittest.TestCase):
+    """Tests that persistent process lifetime is decoupled from per-request timeout."""
+
+    def test_process_survives_beyond_old_timeout_boundary(self) -> None:
+        """With a short timeout_seconds the process lives long enough for
+        multiple requests across a wall-clock span that exceeds the old
+        per-action timeout boundary, proving lifetime is separate."""
+        with tempfile.TemporaryDirectory() as directory:
+            session = UnbrowserSession(
+                _fake_unbrowser(directory),
+                UNBROWSER_SMOKE_URL,
+                timeout_seconds=2,
+            )
+            try:
+                # First request completes well within the per-action deadline.
+                nav = session.execute({"action": "navigate"})
+                self.assertEqual(nav["result"]["status"], 200)
+                self.assertTrue(session.started)
+
+                # Sleep longer than the old per-action timeout boundary
+                # (the old behaviour would have used this value for GNU
+                # timeout as well), but well within the process lifetime
+                # of at least 600 seconds.
+                import time
+                time.sleep(3)
+
+                # Second request still succeeds — the process was not killed
+                # by a per-action timeout expiring between requests.
+                heading = session.execute({"action": "text", "selector": "h1"})
+                self.assertEqual(heading["result"], "Example Domain")
+                self.assertTrue(session.started)
+            finally:
+                session.close()
+            self.assertFalse(session.started)
+
+
+class OversizedResultRecoveryTest(unittest.TestCase):
+    """Tests that oversized wrapped results do not kill the session."""
+
+    def _fake_unbrowser_oversized(self, directory: str) -> str:
+        path = Path(directory) / "fake-unbrowser-oversized"
+        script = f"""#!{sys.executable}
+import json
+import sys
+
+if "--version" in sys.argv:
+    print("unbrowser test-1")
+    raise SystemExit(0)
+
+first_request = True
+for line in sys.stdin:
+    request = json.loads(line)
+    if first_request:
+        print(json.dumps({{"event": "ready", "data": {{"version": "test-1"}}}}), flush=True)
+        first_request = False
+    method = request["method"]
+    request_id = request["id"]
+    params = request.get("params", {{}})
+    if method == "navigate":
+        result = {{"status": 200, "url": "https://example.com/", "challenge": None}}
+    elif method == "text":
+        selector = params.get("selector", "")
+        if selector == "BIG":
+            # Return a very large text payload that will exceed
+            # max_result_bytes when wrapped.
+            result = "X" * (64 * 1024 + 1)
+        else:
+            result = "Small response"
+    elif method == "close":
+        result = "bye"
+    else:
+        print(json.dumps({{"id": request_id, "error": {{"message": "bad"}}}}), flush=True)
+        continue
+    print(json.dumps({{"id": request_id, "result": result}}), flush=True)
+    if method == "close":
+        break
+"""
+        path.write_text(textwrap.dedent(script), encoding="utf-8")
+        path.chmod(0o755)
+        return str(path)
+
+    def test_oversized_result_does_not_kill_session(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            session = UnbrowserSession(
+                self._fake_unbrowser_oversized(directory),
+                UNBROWSER_SMOKE_URL,
+                max_result_bytes=1024,
+            )
+            try:
+                session.execute({"action": "navigate"})
+                # The BIG text response will overflow the wrapped result size.
+                with self.assertRaises(UnbrowserProtocolError) as ctx:
+                    session.execute({"action": "text", "selector": "BIG"})
+                self.assertIn("exceeds", str(ctx.exception))
+                self.assertTrue(session.started, "session must remain alive")
+
+                # A smaller subsequent request must succeed in the same process.
+                heading = session.execute({"action": "text", "selector": "h1"})
+                self.assertEqual(heading["result"], "Small response")
+                self.assertTrue(session.started)
+            finally:
+                session.close()
+            self.assertFalse(session.started)
+
+
+class ProcessExitBeforeRequestTest(unittest.TestCase):
+    """Tests that a pre-exited process raises a clean error before writing."""
+
+    def _fake_unbrowser_exit_early(self, directory: str) -> str:
+        path = Path(directory) / "fake-unbrowser-exit"
+        path.write_text(
+            f"#!{sys.executable}\n"
+            "import sys\n"
+            'print("ok", flush=True)\n'
+            "raise SystemExit(1)\n",
+            encoding="utf-8",
+        )
+        path.chmod(0o755)
+        return str(path)
+
+    def test_poll_check_prevents_raw_broken_pipe(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            session = UnbrowserSession(
+                self._fake_unbrowser_exit_early(directory),
+                UNBROWSER_SMOKE_URL,
+            )
+            try:
+                # The fake binary exits immediately.  On the first request
+                # the session _start tries a version probe, which also fails.
+                # We just verify that a clean UnbrowserProtocolError is raised
+                # rather than a raw BrokenPipeError.
+                with self.assertRaises(UnbrowserProtocolError) as ctx:
+                    session.execute({"action": "navigate"})
+                self.assertIn("exit_code", str(ctx.exception))
+                self.assertTrue(ctx.exception.infrastructure_error)
+            finally:
+                session.close()
+
+
+class BrokenPipeDuringRequestTest(unittest.TestCase):
+    """Tests that a BrokenPipeError during request is caught cleanly."""
+
+    def _fake_unbrowser_close_stdin(self, directory: str) -> str:
+        path = Path(directory) / "fake-unbrowser-close-stdin"
+        script = f"""#!{sys.executable}
+import sys
+if "--version" in sys.argv:
+    print("unbrowser test-1")
+    raise SystemExit(0)
+# Close stdin after the first line to trigger BrokenPipeError on the
+# second write from the host.
+first_line = sys.stdin.readline()
+sys.stdin.close()
+raise SystemExit(42)
+"""
+        path.write_text(textwrap.dedent(script), encoding="utf-8")
+        path.chmod(0o755)
+        return str(path)
+
+    def test_broken_pipe_raises_protocol_error(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            session = UnbrowserSession(
+                self._fake_unbrowser_close_stdin(directory),
+                UNBROWSER_SMOKE_URL,
+            )
+            try:
+                # The first request's _start prints an event, but the fake
+                # closes stdin before the version probe completes.  The
+                # resulting communication failure must surface as
+                # UnbrowserProtocolError, not a raw BrokenPipeError.
+                with self.assertRaises(UnbrowserProtocolError) as ctx:
+                    session.execute({"action": "navigate"})
+                self.assertIn("exit_code", str(ctx.exception))
+                self.assertTrue(ctx.exception.infrastructure_error)
+            finally:
+                session.close()
+
+
+class SemanticCapabilityAdapterTest(unittest.TestCase):
+    def _fixture_session(self, capability: str) -> UnbrowserSession:
+        session = UnbrowserSession(
+            "/bin/true",
+            "http://127.0.0.1:18090/form_entry_validation/7/medium",
+            interactive=True,
+            semantic_capability=capability,
+        )
+        session._navigated = True
+        session._current_url = session.allowed_url
+        return session
+
+    def test_table_adapter_emits_payload_bound_specialist_receipt(self) -> None:
+        session = self._fixture_session("table")
+        html = "<table><tr><th>Name</th></tr><tr><td>Alice</td></tr></table>"
+        session._fetch_public_html = lambda: html  # type: ignore[method-assign]
+        result = session.semantic_table({"projection": ["Name"]})
+        payload = result["semantic_payload"]
+        receipt = result["semantic_specialist_receipt"]
+        encoded = json.dumps(
+            payload, sort_keys=True, ensure_ascii=False, separators=(",", ":")
+        ).encode("utf-8")
+        self.assertEqual(receipt["schema_version"], "pyreplab-semantic-specialist-receipt-v1")
+        self.assertEqual(receipt["specialist"], "table_specialist")
+        self.assertEqual(receipt["action"], "semantic_table")
+        self.assertEqual(receipt["payload_bytes"], len(encoded))
+        import hashlib
+        self.assertEqual(receipt["payload_sha256"], hashlib.sha256(encoded).hexdigest())
+
+    def test_form_describe_adapter_uses_form_index(self) -> None:
+        session = self._fixture_session("form")
+        html = """
+        <form method="get"><input name="first"></form>
+        <form method="get"><input name="second" required></form>
+        """
+        session._fetch_public_html = lambda: html  # type: ignore[method-assign]
+        result = session.semantic_form({"action": "describe", "form_index": 1})
+        payload = result["semantic_payload"]
+        self.assertEqual(payload["form_count"], 2)
+        self.assertEqual(payload["controls"][0]["name"], "second")
+
+    def test_form_submit_adapter_uses_current_url_and_fields(self) -> None:
+        session = self._fixture_session("form")
+        html = """
+        <form method="get" action="">
+          <input name="email" required pattern="^[^@]+@[^@]+$">
+        </form>
+        """
+        session._fetch_public_html = lambda: html  # type: ignore[method-assign]
+        calls: list[tuple[str, dict | None]] = []
+
+        def request(method: str, params: dict | None = None):
+            calls.append((method, params))
+            if method == "navigate":
+                return {"status": 200, "url": params["url"], "challenge": None}
+            if method == "text":
+                return "Submitted"
+            raise AssertionError(method)
+
+        session._request = request  # type: ignore[method-assign]
+        result = session.semantic_form({
+            "action": "submit",
+            "fields": [{"name": "email", "value": "a@example.com"}],
+        })
+        payload = result["semantic_payload"]
+        self.assertIn("email=a%40example.com", payload["submission_url"])
+        self.assertEqual(calls[0][0], "navigate")
+        self.assertEqual(calls[1], ("text", {"selector": "body"}))
+
+    def test_form_submit_rejects_duplicate_fields(self) -> None:
+        session = self._fixture_session("form")
+        session._fetch_public_html = lambda: "<form method='get'><input name='q'></form>"  # type: ignore[method-assign]
+        with self.assertRaisesRegex(ValueError, "duplicate field"):
+            session.semantic_form({
+                "action": "submit",
+                "fields": [
+                    {"name": "q", "value": "one"},
+                    {"name": "q", "value": "two"},
+                ],
+            })

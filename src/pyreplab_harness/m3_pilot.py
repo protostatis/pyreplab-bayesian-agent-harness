@@ -661,13 +661,28 @@ def runtime_preflight(
     unbrowser_binary: str,
     model_artifact: str,
     llama_server_binary: str,
+    require_clean: bool = True,
 ) -> dict[str, Any]:
-    """Verify frozen binaries, source parity, clean Git state, and fixture port."""
+    """Verify frozen binaries, source parity, Git state, and fixture port.
+
+    When ``require_clean`` is True (the default for the frozen headroom
+    pilot), a dirty worktree is a hard failure.  When False (exploratory
+    screens), the preflight records but does not reject a dirty tree.
+    """
     validate_remote_config(config)
-    dirty = _run_checked(
+    dirty_text = _run_checked(
         ["git", "status", "--porcelain"], timeout=30, cwd=project_root
     )
-    if dirty:
+    worktree_clean = not bool(dirty_text.strip())
+    _CLEAN_MARKER_HASH = (
+        hashlib.sha256(b"PYREPLAB_GIT_WORKTREE_CLEAN_MARKER_V1").hexdigest()
+    )
+    worktree_status_hash = (
+        _CLEAN_MARKER_HASH
+        if worktree_clean
+        else hashlib.sha256(dirty_text.encode("utf-8")).hexdigest()
+    )
+    if require_clean and not worktree_clean:
         raise RuntimeError("headroom pilot requires a clean Git worktree")
     code_revision = _run_checked(
         ["git", "rev-parse", "HEAD"], timeout=30, cwd=project_root
@@ -793,6 +808,8 @@ def runtime_preflight(
         "checked_at": datetime.now(timezone.utc).isoformat(),
         "code_revision": code_revision,
         "source_tree_hash": local_source_hash,
+        "worktree_clean": worktree_clean,
+        "worktree_status_hash": worktree_status_hash,
         "runtime_pins": expected,
     }
 

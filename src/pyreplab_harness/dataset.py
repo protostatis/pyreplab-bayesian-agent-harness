@@ -46,6 +46,13 @@ The split is computed per whole task from a stable SHA-256 of
 15% / test 15%. It never depends on the attempt, so both policies of a pair
 always land in the same split. The stored ``TaskSpec.split`` field is ignored.
 
+``T_canary`` / ``T_pilot`` tasks are mapped to the reserved excluded splits
+``canary_excluded`` / ``pilot_excluded``.  Those rows additionally carry a
+``governance_role`` equal to the excluded split and an ``eligibility`` object
+whose ``training`` / ``calibration`` / ``development`` / ``final`` booleans are
+all ``False``, so an excluded row can never silently enter a current
+meta-training, calibration, development, or final-evaluation pool.
+
 Robustness
 ----------
 Attempts that are not yet verified are skipped by default; the summary
@@ -77,6 +84,21 @@ from .treatments import (
 
 #: Cumulative bucket bounds for the ~70/15/15 whole-task split.
 _SPLIT_BOUNDS: tuple[tuple[str, int], ...] = (("train", 70), ("validation", 85))
+
+#: Split labels that mark a whole task as permanently excluded from every
+#: current meta-training / calibration / development / final pool.  Rows with
+#: one of these splits carry a ``governance_role`` equal to the split and an
+#: ``eligibility`` object whose four booleans are all ``False``.
+_EXCLUDED_SPLITS: frozenset[str] = frozenset({"canary_excluded", "pilot_excluded"})
+
+#: The four current governance pools; an excluded row must be ineligible for
+#: every one of them.
+_ELIGIBILITY_POOLS: tuple[str, ...] = (
+    "training",
+    "calibration",
+    "development",
+    "final",
+)
 
 _TASK_REQUIRED: dict[str, type] = {
     "id": str,
@@ -143,6 +165,26 @@ def flatten_public_metadata(
 
 
 _UNBROWSER_GRAMMAR_INTERFACE = "native_bash_unbrowser_interactive_v1"
+
+# All three interactive Unbrowser interfaces share the same identity-free
+# grammar model_input schema.
+_UNBROWSER_GRAMMAR_INTERFACES = frozenset({
+    _UNBROWSER_GRAMMAR_INTERFACE,
+    "native_bash_unbrowser_interactive_text_first_v1",
+    "native_bash_unbrowser_interactive_structure_first_v1",
+})
+
+# DDL-1 (semantic_table) and DDL-2 (semantic_form) tool interfaces carry
+# distinct tool schemas and do NOT share the 72-cell grammar factor
+# structure.  Their rows therefore use the legacy generic model_input path
+# (non-identity-free) with the treatment descriptor augmented by any
+# available generator_metadata labels.  This is intentional; the M3/CNP
+# identity-free schema requires a well-defined factor vector that these
+# purpose-specific interfaces do not yet define.
+_SEMANTIC_SPECIALIST_INTERFACES: frozenset[str] = frozenset({
+    "native_bash_unbrowser_semantic_table_v1",
+    "native_bash_unbrowser_semantic_form_v1",
+})
 
 _UNBROWSER_GRAMMAR_FACTOR_KEYS = (
     "planning",
@@ -271,7 +313,7 @@ def build_model_input(
 
     is_grammar = (
         treatment is not None
-        and treatment.tool_interface == _UNBROWSER_GRAMMAR_INTERFACE
+        and treatment.tool_interface in _UNBROWSER_GRAMMAR_INTERFACES
     )
 
     if is_grammar:
@@ -322,10 +364,24 @@ def build_model_input(
         # Non-grammar treatments (interface != _UNBROWSER_GRAMMAR_INTERFACE)
         # are unaffected — their model_input.treatment dict remains unchanged.
         # ------------------------------------------------------------------
-        if treatment.tool_interface == _UNBROWSER_GRAMMAR_INTERFACE:
+        if treatment.tool_interface in _UNBROWSER_GRAMMAR_INTERFACES:
             factors = _grammar_factors_from_treatment(treatment)
             if factors is not None:
                 treatment_desc["grammar_factors"] = factors
+        # ------------------------------------------------------------------
+        # ADDITIVE: attach the structured specialist capability identity for
+        # the two semantic interfaces (DDL-1 semantic_table / DDL-2
+        # semantic_form).  These rows follow the generic model_input path, so
+        # the capability family, parent bundle and substrate are surfaced as a
+        # structured ``semantic`` descriptor from generator_metadata.
+        # ------------------------------------------------------------------
+        if treatment.tool_interface in _SEMANTIC_SPECIALIST_INTERFACES:
+            meta = treatment.generator_metadata
+            treatment_desc["semantic"] = {
+                "capability": str(meta.get("capability", "")),
+                "parent_bundle_id": str(meta.get("parent_bundle_id", "")),
+                "substrate": str(meta.get("substrate", "")),
+            }
         model_input["treatment"] = treatment_desc
     return model_input
 
@@ -504,6 +560,9 @@ def _build_row(
     task_role = task["public_metadata"].get("task_role")
     if isinstance(task_role, str) and task_role:
         row["task_role"] = task_role
+    if split in _EXCLUDED_SPLITS:
+        row["governance_role"] = split
+        row["eligibility"] = {pool: False for pool in _ELIGIBILITY_POOLS}
     for field in (
         "rollout_replica",
         "sampling_seed",

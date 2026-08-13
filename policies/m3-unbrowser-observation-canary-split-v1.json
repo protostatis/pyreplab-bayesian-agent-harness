@@ -1,0 +1,19 @@
+{
+  "grammar_name": "unbrowser_interactive_observation_canary",
+  "grammar_version": "m3-v2",
+  "manifest_hash": "dc35867891fce9e423eb67698afbd3c15f0b0bd5aa5c2bee1ffe0b0f2806ab7b",
+  "policy_version": "3-observation-enforced",
+  "registry_file": "m3-unbrowser-observation-canary-v1.json",
+  "registry_hash": "8f54b33f54b469f133d84a7f5ec43b2b710783197382b639d4cc333de46eb216",
+  "schema_version": "m3-policy-split-v1",
+  "split_algorithm": "observation-canary-isolated-v1",
+  "split_seed": 20260811,
+  "splits": {
+    "development": [],
+    "final_held_out": [],
+    "meta_train": [
+      "ub-decompose-text_first-submit_directly-diagnose_retry_once-expanded@3-observation-enforced-08ffb871",
+      "ub-decompose-structure_first-submit_directly-diagnose_retry_once-expanded@3-observation-enforced-be2ac70a"
+    ]
+  }
+}

@@ -614,12 +614,22 @@ def load_dataset_rows(dataset_path: str | Path) -> list[dict[str, Any]]:
 
 
 def group_by_split(rows: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
-    """Preserve the whole-task splits already assigned in the dataset."""
+    """Partition rows into the known ``train``/``validation``/``test`` splits.
+
+    Fails closed on any row whose ``split`` is missing or is not one of the
+    known split names.  Excluded splits (``canary_excluded``, ``pilot_excluded``)
+    and unknown/missing splits must never be silently mapped into ``train``,
+    because that would leak excluded rows into meta-training or cost fitting.
+    """
     groups: dict[str, list[dict[str, Any]]] = {name: [] for name in _SPLIT_NAMES}
     for row in rows:
-        split = row.get("split", "train")
+        split = row.get("split")
         if split not in groups:
-            split = "train"
+            raise ValueError(
+                f"row has missing or unknown split {split!r}; expected one of "
+                f"{_SPLIT_NAMES}. Excluded or missing splits must not be "
+                "silently mapped to train."
+            )
         groups[split].append(row)
     return groups
 

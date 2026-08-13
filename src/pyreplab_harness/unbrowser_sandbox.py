@@ -41,14 +41,18 @@ class UnbrowserSandbox:
     - /home
     """
 
-    def __init__(self, binary: str, *, command_timeout: int = 30) -> None:
+    def __init__(
+        self,
+        binary: str,
+    ) -> None:
         """Configure the confinement.
 
         Args:
             binary: Absolute path to the Unbrowser executable.  Must exist and
                 be executable at construction time.
-            command_timeout: Maximum wall-clock seconds the confined process may
-                live (defence-in-depth via GNU ``timeout``).
+            The persistent process has no sandbox-level wall-clock timeout.
+                Individual RPC calls are bounded by ``UnbrowserSession`` and
+                the enclosing agent attempt has its own wall-clock deadline.
         """
         binary_path = Path(binary)
         if not binary_path.is_absolute():
@@ -57,11 +61,7 @@ class UnbrowserSandbox:
             raise FileNotFoundError(
                 f"unbrowser binary is not executable: {binary}"
             )
-        if command_timeout <= 0:
-            raise ValueError("command_timeout must be positive")
-
         self.binary = str(binary_path)
-        self.command_timeout = int(command_timeout)
 
     def build_command(self, *args: str) -> list[str]:
         """Return the full ``bwrap`` command line that launches unbrowser.
@@ -128,15 +128,7 @@ class UnbrowserSandbox:
         bwrap_cmd.append(self.binary)
         bwrap_cmd.extend(args)
 
-        # Wrap with GNU timeout for defence-in-depth: if the sandbox hangs the
-        # kernel will eventually deliver SIGKILL even when --die-with-parent
-        # races with a stuck mount namespace.
-        return [
-            "timeout",
-            "--kill-after=5s",
-            f"{self.command_timeout}s",
-            *bwrap_cmd,
-        ]
+        return bwrap_cmd
 
     def canary_paths(self) -> list[str]:
         """Return paths the confined process must NOT be able to read.

@@ -1,8 +1,14 @@
 from __future__ import annotations
 
+import hashlib
+import json
 import unittest
 
-from pyreplab_harness.m3_adherence import assess_policy_adherence
+from pyreplab_harness.m3_adherence import (
+    _navigate_receipt_action,
+    _valid_auto_first_observation,
+    assess_policy_adherence,
+)
 from pyreplab_harness.meta_grammar import enumerate_unbrowser_grammar
 
 
@@ -116,6 +122,116 @@ class M3AdherenceTest(unittest.TestCase):
                 "tool_trace": trace,
             },
         )
+        self.assertEqual(result["admitted_tool_call_count"], 6)
+        self.assertEqual(result["budget_rejection_count"], 1)
+        self.assertTrue(result["tool_cap_compliant"])
+
+    def test_unmarked_aborted_call_after_cap_is_inferred_as_rejected(self) -> None:
+        treatment = _treatment(
+            "direct", "text_first", "submit_directly", "fail_fast"
+        )
+        trace = [_entry("bash", exit_code=0) for _ in range(6)]
+        trace.append(
+            {
+                "tool_name": "bash",
+                "is_error": True,
+                "budget_rejected": False,
+                "details": {},
+            }
+        )
+        result = assess_policy_adherence(treatment, {"tool_trace": trace})
+        self.assertEqual(result["admitted_tool_call_count"], 6)
+        self.assertEqual(result["budget_rejection_count"], 1)
+        self.assertTrue(result["tool_cap_compliant"])
+
+    def test_marked_aborted_call_after_cap_is_inferred_as_rejected(self) -> None:
+        treatment = _treatment(
+            "direct", "text_first", "submit_directly", "fail_fast"
+        )
+        trace = [_entry("bash", exit_code=0) for _ in range(6)]
+        trace.append(
+            {
+                "tool_name": "bash",
+                "is_error": True,
+                "budget_rejected": False,
+                "operation_aborted": True,
+                "details": {},
+            }
+        )
+        result = assess_policy_adherence(treatment, {"tool_trace": trace})
+        self.assertEqual(result["admitted_tool_call_count"], 6)
+        self.assertEqual(result["budget_rejection_count"], 1)
+        self.assertTrue(result["tool_cap_compliant"])
+
+    def test_empty_error_before_cap_remains_admitted(self) -> None:
+        treatment = _treatment(
+            "direct", "text_first", "submit_directly", "fail_fast"
+        )
+        trace = [
+            {
+                "tool_name": "unbrowser",
+                "is_error": True,
+                "budget_rejected": False,
+                "details": {},
+            },
+            *[_entry("bash", exit_code=0) for _ in range(5)],
+        ]
+        result = assess_policy_adherence(treatment, {"tool_trace": trace})
+        self.assertEqual(result["admitted_tool_call_count"], 6)
+        self.assertEqual(result["budget_rejection_count"], 0)
+        self.assertTrue(result["tool_cap_compliant"])
+
+    def test_explicit_pre_execution_rejection_is_not_admitted(self) -> None:
+        treatment = _treatment(
+            "direct", "text_first", "submit_directly", "fail_fast"
+        )
+        trace = [_entry("bash", exit_code=0) for _ in range(5)]
+        trace.append({
+            "tool_name": "unbrowser",
+            "is_error": True,
+            "budget_rejected": False,
+            "operation_aborted": False,
+            "pre_execution_rejected": True,
+            "details": {},
+        })
+        result = assess_policy_adherence(treatment, {"tool_trace": trace})
+        self.assertEqual(result["admitted_tool_call_count"], 5)
+        self.assertEqual(result["budget_rejection_count"], 1)
+
+    def test_successful_call_after_cap_remains_noncompliant(self) -> None:
+        treatment = _treatment(
+            "direct", "text_first", "submit_directly", "fail_fast"
+        )
+        trace = [_entry("bash", exit_code=0) for _ in range(6)]
+        trace.append(_entry("unbrowser", action="navigate", status=200))
+        trace.append(
+            {
+                "tool_name": "bash",
+                "is_error": True,
+                "budget_rejected": False,
+                "details": {},
+            }
+        )
+        result = assess_policy_adherence(treatment, {"tool_trace": trace})
+        self.assertEqual(result["admitted_tool_call_count"], 7)
+        self.assertEqual(result["budget_rejection_count"], 1)
+        self.assertFalse(result["tool_cap_compliant"])
+
+    def test_empty_error_after_cap_with_false_abort_marker_is_rejected(self) -> None:
+        treatment = _treatment(
+            "direct", "text_first", "submit_directly", "fail_fast"
+        )
+        trace = [_entry("bash", exit_code=0) for _ in range(6)]
+        trace.append(
+            {
+                "tool_name": "bash",
+                "is_error": True,
+                "budget_rejected": False,
+                "operation_aborted": False,
+                "details": {},
+            }
+        )
+        result = assess_policy_adherence(treatment, {"tool_trace": trace})
         self.assertEqual(result["admitted_tool_call_count"], 6)
         self.assertEqual(result["budget_rejection_count"], 1)
         self.assertTrue(result["tool_cap_compliant"])
@@ -256,6 +372,179 @@ class M3AdherenceTest(unittest.TestCase):
             )
             self.assertFalse(result["recovery_probe_adherent"])
             self.assertFalse(result["recovery_eligible"])
+
+
+class ReceiptAdherenceTest(unittest.TestCase):
+    """Tests for receipt-based first-observation detection."""
+
+    def _receipt_entry(self, delivered_action: str):
+        payload = "Example Domain"
+        encoded = json.dumps(
+            payload,
+            sort_keys=True,
+            ensure_ascii=False,
+            separators=(",", ":"),
+        ).encode("utf-8")
+        return {
+            "tool_name": "unbrowser",
+            "is_error": False,
+            "budget_rejected": False,
+            "details": {
+                "action": "navigate",
+                "required_first_observation_receipt": {
+                    "schema_version": "pyreplab-required-first-observation-v1",
+                    "mechanism": "auto_delivered_first_observation",
+                    "required_action": delivered_action,
+                    "delivered_action": delivered_action,
+                    "selector": "body" if delivered_action == "text" else None,
+                    "delivered": True,
+                    "payload_bytes": len(encoded),
+                    "payload_sha256": hashlib.sha256(encoded).hexdigest(),
+                },
+                "auto_delivered_observation": payload,
+            },
+        }
+
+    def test_receipt_navigate_counts_as_text_observation(self) -> None:
+        treatment = _treatment(
+            "direct", "text_first", "submit_directly", "fail_fast"
+        )
+        trajectory = {
+            "planning_preamble": {"present": False},
+            "tool_trace": [
+                self._receipt_entry("text"),
+                _entry("bash", exit_code=0),
+            ],
+        }
+        result = assess_policy_adherence(treatment, trajectory)
+        self.assertEqual(result["first_observation"], "text")
+        self.assertTrue(result["observation_adherent"])
+        self.assertEqual(result["receipt_mechanism"], "auto_delivered_first_observation")
+        self.assertTrue(result["first_observation_receipt_valid"])
+
+    def test_receipt_navigate_counts_as_blockmap_observation(self) -> None:
+        treatment = _treatment(
+            "direct", "structure_first", "submit_directly", "fail_fast"
+        )
+        trajectory = {
+            "planning_preamble": {"present": False},
+            "tool_trace": [
+                self._receipt_entry("blockmap"),
+                _entry("bash", exit_code=0),
+            ],
+        }
+        result = assess_policy_adherence(treatment, trajectory)
+        self.assertEqual(result["first_observation"], "blockmap")
+        self.assertTrue(result["observation_adherent"])
+
+    def test_malformed_receipt_schema_is_not_adherent(self) -> None:
+        treatment = _treatment(
+            "direct", "text_first", "submit_directly", "fail_fast"
+        )
+        bad_entry = {
+            "tool_name": "unbrowser",
+            "is_error": False,
+            "budget_rejected": False,
+            "details": {
+                "action": "navigate",
+                "required_first_observation_receipt": {
+                    "schema_version": "wrong-schema-v1",
+                    "mechanism": "auto_delivered_first_observation",
+                    "required_action": "text",
+                    "delivered_action": "text",
+                    "delivered": True,
+                    "payload_bytes": 42,
+                    "payload_sha256": "a" * 64,
+                },
+            },
+        }
+        trajectory = {
+            "planning_preamble": {"present": False},
+            "tool_trace": [bad_entry, _entry("bash", exit_code=0)],
+        }
+        result = assess_policy_adherence(treatment, trajectory)
+        self.assertIsNone(result["first_observation"])
+        self.assertFalse(result["observation_adherent"])
+        self.assertFalse(result["first_observation_receipt_valid"])
+
+    def test_receipt_payload_hash_mismatch_is_not_adherent(self) -> None:
+        treatment = _treatment(
+            "direct", "text_first", "submit_directly", "fail_fast"
+        )
+        entry = self._receipt_entry("text")
+        entry["details"]["required_first_observation_receipt"][
+            "payload_sha256"
+        ] = "0" * 64
+        trajectory = {
+            "planning_preamble": {"present": False},
+            "tool_trace": [
+                entry,
+                _entry("unbrowser", action="text", selector="body"),
+            ],
+        }
+        result = assess_policy_adherence(treatment, trajectory)
+        self.assertIsNone(result["first_observation"])
+        self.assertFalse(result["observation_adherent"])
+        self.assertFalse(result["first_observation_receipt_valid"])
+
+    def test_wrong_receipt_mechanism_is_non_adherent(self) -> None:
+        treatment = _treatment(
+            "direct", "text_first", "submit_directly", "fail_fast"
+        )
+        bad_entry = {
+            "tool_name": "unbrowser",
+            "is_error": False,
+            "budget_rejected": False,
+            "details": {
+                "action": "navigate",
+                "required_first_observation_receipt": {
+                    "schema_version": "pyreplab-required-first-observation-v1",
+                    "mechanism": "some_other_mechanism",
+                    "required_action": "text",
+                    "delivered_action": "text",
+                    "delivered": True,
+                    "payload_bytes": 42,
+                    "payload_sha256": "a" * 64,
+                },
+            },
+        }
+        trajectory = {
+            "planning_preamble": {"present": False},
+            "tool_trace": [bad_entry, _entry("bash", exit_code=0)],
+        }
+        result = assess_policy_adherence(treatment, trajectory)
+        self.assertIsNone(result["first_observation"])
+
+    def test_no_receipt_historical_trace_works_unchanged(self) -> None:
+        """Historical traces without receipts must produce the same results."""
+        treatment = _treatment(
+            "direct", "text_first", "submit_directly", "fail_fast"
+        )
+        trajectory = {
+            "planning_preamble": {"present": False},
+            "tool_trace": [
+                _entry("unbrowser", action="navigate"),
+                _entry("unbrowser", action="text", selector="body"),
+                _entry("bash", exit_code=0),
+            ],
+        }
+        result = assess_policy_adherence(treatment, trajectory)
+        self.assertEqual(result["first_observation"], "text")
+        self.assertTrue(result["observation_adherent"])
+        self.assertIsNone(result["receipt_mechanism"])
+
+    def test_navigate_receipt_action_helper(self) -> None:
+        """Verify the helper correctly extracts the delivered action."""
+        entry = self._receipt_entry("text")
+        self.assertEqual(_navigate_receipt_action(entry), "text")
+
+        # Non-navigate entry returns None.
+        non_nav = _entry("unbrowser", action="blockmap")
+        self.assertIsNone(_navigate_receipt_action(non_nav))
+
+        # Entry without receipt returns None.
+        no_receipt = _entry("unbrowser", action="navigate")
+        self.assertIsNone(_navigate_receipt_action(no_receipt))
 
 
 if __name__ == "__main__":

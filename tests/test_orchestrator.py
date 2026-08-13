@@ -7,11 +7,14 @@ from pathlib import Path
 from unittest import mock
 
 from pyreplab_harness.orchestrator import (
+    UNBROWSER_INTERACTIVE_STRUCTURE_FIRST_INTERFACE,
+    UNBROWSER_INTERACTIVE_TEXT_FIRST_INTERFACE,
     UNBROWSER_INTERACTIVE_TOOL_INTERFACE,
     UNBROWSER_TOOL_INTERFACE,
     RemoteConfig,
     _pair_order,
     _parse_sampling_receipt,
+    _required_first_observation_from_interface,
     _run_attempt,
     _run_pi,
     _run_policy_set,
@@ -592,6 +595,61 @@ class GeneralizedTreatmentOrchestratorTest(unittest.TestCase):
         self.assertEqual(record_call.kwargs["input_text"], "")
         self.assertEqual(result["verification"]["failure_code"], "missing_output")
 
+    def test_routing_attempt_requires_normalized_event_summary(self) -> None:
+        treatment = TreatmentSpec(
+            id="routing-fixture",
+            version="1",
+            system_prompt="Use routing fixture.",
+            allowed_tools=("bash", "unbrowser"),
+            max_output_tokens=256,
+            tool_call_limit=2,
+            command_timeout_seconds=10,
+            wall_time_limit_seconds=30,
+            tool_interface=UNBROWSER_INTERACTIVE_TOOL_INTERFACE,
+        )
+        task = {
+            "id": "routing-fixture-rf-test",
+            "family": "routing_fixture",
+            "prompt": "task",
+            "public_metadata": {
+                "allowed_url": "http://127.0.0.1:18090/routing/rf-test"
+            },
+        }
+
+        def remote(_config, arguments, **_kwargs):
+            if arguments[0] == "prepare-attempt":
+                return {"workspace_ref": "/runs/attempts/a/workspace"}
+            if arguments[0] == "record-events":
+                return {"recorded": 1}
+            if arguments[0] == "verify":
+                return {
+                    "success": False,
+                    "verifier_id": "routing-fixture-nonce",
+                    "verifier_version": "1",
+                    "failure_code": "missing_output",
+                }
+            self.fail(f"unexpected remote command: {arguments}")
+
+        completed = mock.Mock(returncode=0, stdout="", stderr="")
+        with mock.patch(
+            "pyreplab_harness.orchestrator.remote_json", side_effect=remote
+        ), mock.patch(
+            "pyreplab_harness.orchestrator._run_pi_checked", return_value=completed
+        ), mock.patch(
+            "pyreplab_harness.orchestrator._attempt_event_summary", return_value=None
+        ):
+            with self.assertRaisesRegex(RuntimeError, "event summary"):
+                _run_attempt(
+                    PROJECT_ROOT,
+                    RemoteConfig("host", "/project", "/runs"),
+                    task,
+                    policy_spec_from_treatment(treatment),
+                    "attempt-routing",
+                    build_parser().parse_args(["--family", "routing_fixture"]),
+                    with_usage=True,
+                    require_complete_event_summary=True,
+                )
+
 
 class UnbrowserFixtureOrchestratorTest(unittest.TestCase):
     """Tests for the unbrowser_fixture family in the orchestrator."""
@@ -828,6 +886,484 @@ class UnbrowserFixtureOrchestratorTest(unittest.TestCase):
             ["--fixture-template", "multi_page_navigation"]
         )
         self.assertEqual(args.fixture_template, "multi_page_navigation")
+
+
+class RequiredFirstObservationOrchestratorTest(unittest.TestCase):
+    """Tests for the text_first and structure_first observation-enforcement interfaces."""
+
+    def test_text_first_interface_is_accepted(self) -> None:
+        base = dict(
+            id="text-first-correct",
+            version="1",
+            system_prompt="Use the interactive browser with text-first observation.",
+            max_output_tokens=2048,
+            tool_call_limit=12,
+            command_timeout_seconds=45,
+            wall_time_limit_seconds=360,
+            tool_interface=UNBROWSER_INTERACTIVE_TEXT_FIRST_INTERFACE,
+        )
+        treatment = TreatmentSpec(
+            **base,
+            allowed_tools=("bash", "unbrowser"),
+        )
+        policy = policy_spec_from_treatment(treatment)
+        self.assertEqual(policy.allowed_tools, ("bash", "unbrowser"))
+        self.assertEqual(policy.tool_interface, UNBROWSER_INTERACTIVE_TEXT_FIRST_INTERFACE)
+        self.assertEqual(policy.enforce_budget, True)
+
+    def test_structure_first_interface_is_accepted(self) -> None:
+        base = dict(
+            id="structure-first-correct",
+            version="1",
+            system_prompt="Use the interactive browser with structure-first observation.",
+            max_output_tokens=2048,
+            tool_call_limit=12,
+            command_timeout_seconds=45,
+            wall_time_limit_seconds=360,
+            tool_interface=UNBROWSER_INTERACTIVE_STRUCTURE_FIRST_INTERFACE,
+        )
+        treatment = TreatmentSpec(
+            **base,
+            allowed_tools=("bash", "unbrowser"),
+        )
+        policy = policy_spec_from_treatment(treatment)
+        self.assertEqual(policy.allowed_tools, ("bash", "unbrowser"))
+        self.assertEqual(policy.tool_interface, UNBROWSER_INTERACTIVE_STRUCTURE_FIRST_INTERFACE)
+
+    def test_required_first_observation_helper_returns_correct_value(self) -> None:
+        self.assertEqual(
+            _required_first_observation_from_interface(UNBROWSER_INTERACTIVE_TEXT_FIRST_INTERFACE),
+            "text",
+        )
+        self.assertEqual(
+            _required_first_observation_from_interface(UNBROWSER_INTERACTIVE_STRUCTURE_FIRST_INTERFACE),
+            "blockmap",
+        )
+        self.assertIsNone(
+            _required_first_observation_from_interface(UNBROWSER_INTERACTIVE_TOOL_INTERFACE),
+        )
+        self.assertIsNone(_required_first_observation_from_interface("native_bash"))
+
+    def test_text_first_pi_command_includes_required_flag(self) -> None:
+        treatment = TreatmentSpec(
+            id="text-first-correct",
+            version="1",
+            system_prompt="Use Unbrowser interactively.",
+            allowed_tools=("bash", "unbrowser"),
+            max_output_tokens=2048,
+            tool_call_limit=12,
+            command_timeout_seconds=45,
+            wall_time_limit_seconds=360,
+            tool_interface=UNBROWSER_INTERACTIVE_TEXT_FIRST_INTERFACE,
+        )
+        completed = mock.Mock(returncode=0, stdout="", stderr="")
+        with mock.patch(
+            "pyreplab_harness.orchestrator.subprocess.run", return_value=completed
+        ) as runner:
+            _run_pi(
+                PROJECT_ROOT,
+                RemoteConfig("host", "/project", "/runs"),
+                "/runs/workspace",
+                "task prompt",
+                policy_spec_from_treatment(treatment),
+                "pi",
+                None,
+                unbrowser_url=UNBROWSER_INTERACTIVE_URL,
+                unbrowser_binary="/usr/local/bin/unbrowser",
+                unbrowser_interactive=True,
+            )
+        command = runner.call_args.args[0]
+        self.assertIn("--gym-unbrowser-required-first-observation", command)
+        idx = command.index("--gym-unbrowser-required-first-observation")
+        self.assertEqual(command[idx + 1], "text")
+
+    def test_structure_first_pi_command_includes_required_flag(self) -> None:
+        treatment = TreatmentSpec(
+            id="structure-first-correct",
+            version="1",
+            system_prompt="Use Unbrowser interactively.",
+            allowed_tools=("bash", "unbrowser"),
+            max_output_tokens=2048,
+            tool_call_limit=12,
+            command_timeout_seconds=45,
+            wall_time_limit_seconds=360,
+            tool_interface=UNBROWSER_INTERACTIVE_STRUCTURE_FIRST_INTERFACE,
+        )
+        completed = mock.Mock(returncode=0, stdout="", stderr="")
+        with mock.patch(
+            "pyreplab_harness.orchestrator.subprocess.run", return_value=completed
+        ) as runner:
+            _run_pi(
+                PROJECT_ROOT,
+                RemoteConfig("host", "/project", "/runs"),
+                "/runs/workspace",
+                "task prompt",
+                policy_spec_from_treatment(treatment),
+                "pi",
+                None,
+                unbrowser_url=UNBROWSER_INTERACTIVE_URL,
+                unbrowser_binary="/usr/local/bin/unbrowser",
+                unbrowser_interactive=True,
+            )
+        command = runner.call_args.args[0]
+        self.assertIn("--gym-unbrowser-required-first-observation", command)
+        idx = command.index("--gym-unbrowser-required-first-observation")
+        self.assertEqual(command[idx + 1], "blockmap")
+
+    def test_plain_interactive_pi_command_omits_required_flag(self) -> None:
+        treatment = TreatmentSpec(
+            id="plain-int",
+            version="1",
+            system_prompt="Use Unbrowser interactively.",
+            allowed_tools=("bash", "unbrowser"),
+            max_output_tokens=2048,
+            tool_call_limit=12,
+            command_timeout_seconds=45,
+            wall_time_limit_seconds=360,
+            tool_interface=UNBROWSER_INTERACTIVE_TOOL_INTERFACE,
+        )
+        completed = mock.Mock(returncode=0, stdout="", stderr="")
+        with mock.patch(
+            "pyreplab_harness.orchestrator.subprocess.run", return_value=completed
+        ) as runner:
+            _run_pi(
+                PROJECT_ROOT,
+                RemoteConfig("host", "/project", "/runs"),
+                "/runs/workspace",
+                "task prompt",
+                policy_spec_from_treatment(treatment),
+                "pi",
+                None,
+                unbrowser_url=UNBROWSER_INTERACTIVE_URL,
+                unbrowser_binary="/usr/local/bin/unbrowser",
+                unbrowser_interactive=True,
+            )
+        command = runner.call_args.args[0]
+        self.assertNotIn("--gym-unbrowser-required-first-observation", command)
+
+
+class RoutingFixtureOrchestratorTest(unittest.TestCase):
+    """Tests for the routing_fixture family in the orchestrator."""
+
+    def test_routing_fixture_family_rejects_legacy_and_mixed_tool_policies(self) -> None:
+        args = argparse.Namespace(
+            family="routing_fixture",
+            policy="direct",
+            policy_version="1",
+        )
+        config = RemoteConfig("host", "/project", "/runs")
+        with self.assertRaisesRegex(ValueError, "require.*registered"):
+            run_single(PROJECT_ROOT, config, args)
+        with self.assertRaisesRegex(ValueError, "require.*registered"):
+            run_pair(PROJECT_ROOT, config, args)
+
+        bash_only = generate_treatments(1, seed=33)[0]
+        registry = TreatmentRegistry((bash_only,))
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "registry.json"
+            registry.save(path)
+            registered_args = argparse.Namespace(
+                family="routing_fixture",
+                treatment_registry=str(path),
+                treatments="all",
+            )
+            with self.assertRaisesRegex(ValueError, "every treatment"):
+                run_registered_treatments(PROJECT_ROOT, config, registered_args)
+
+    def test_routing_fixture_url_validated_correctly(self) -> None:
+        treatment = TreatmentSpec(
+            id="routing-fixture",
+            version="1",
+            system_prompt="Use Unbrowser on routing fixture pages.",
+            allowed_tools=("bash", "unbrowser"),
+            max_output_tokens=2048,
+            tool_call_limit=12,
+            command_timeout_seconds=45,
+            wall_time_limit_seconds=360,
+            tool_interface=UNBROWSER_INTERACTIVE_TOOL_INTERFACE,
+        )
+        policy = policy_spec_from_treatment(treatment)
+
+        task = {
+            "family": "routing_fixture",
+            "public_metadata": {
+                "allowed_url": "http://127.0.0.1:18090/routing/rf-abc123"
+            },
+        }
+        url = _unbrowser_url_for_task(task, policy)
+        self.assertEqual(url, "http://127.0.0.1:18090/routing/rf-abc123")
+
+    def test_routing_fixture_url_rejected_for_wrong_origin(self) -> None:
+        treatment = TreatmentSpec(
+            id="routing-fixture-bad",
+            version="1",
+            system_prompt="Use Unbrowser on routing fixture pages.",
+            allowed_tools=("bash", "unbrowser"),
+            max_output_tokens=2048,
+            tool_call_limit=12,
+            command_timeout_seconds=45,
+            wall_time_limit_seconds=360,
+            tool_interface=UNBROWSER_INTERACTIVE_TOOL_INTERFACE,
+        )
+        policy = policy_spec_from_treatment(treatment)
+
+        task = {
+            "family": "routing_fixture",
+            "public_metadata": {"allowed_url": "http://example.com/page"},
+        }
+        with self.assertRaisesRegex(ValueError, "pinned"):
+            _unbrowser_url_for_task(task, policy)
+
+    def test_routing_fixture_passes_confine_and_interactive(self) -> None:
+        treatment = TreatmentSpec(
+            id="routing-fixture",
+            version="1",
+            system_prompt="Use Unbrowser on routing fixture pages.",
+            allowed_tools=("bash", "unbrowser"),
+            max_output_tokens=2048,
+            tool_call_limit=12,
+            command_timeout_seconds=45,
+            wall_time_limit_seconds=360,
+            tool_interface=UNBROWSER_INTERACTIVE_TOOL_INTERFACE,
+        )
+        completed = mock.Mock(returncode=0, stdout="", stderr="")
+        with mock.patch(
+            "pyreplab_harness.orchestrator.subprocess.run", return_value=completed
+        ) as runner:
+            _run_pi(
+                PROJECT_ROOT,
+                RemoteConfig("host", "/project", "/runs"),
+                "/runs/workspace",
+                "task prompt",
+                policy_spec_from_treatment(treatment),
+                "pi",
+                None,
+                unbrowser_url="http://127.0.0.1:18090/routing/rf-abc123",
+                unbrowser_binary="/usr/local/bin/unbrowser",
+                unbrowser_interactive=True,
+                confine_unbrowser=True,
+            )
+        command = runner.call_args.args[0]
+        self.assertIn("--gym-confine-unbrowser", command)
+        self.assertIn("--gym-unbrowser-interactive", command)
+
+    def test_task_json_forwards_task_role_for_routing_fixture(self) -> None:
+        config = RemoteConfig("host", "/project", "/runs")
+        fixture_args = argparse.Namespace(
+            family="routing_fixture",
+            seed=7,
+            difficulty="easy",
+            task_role="T_canary",
+        )
+        with mock.patch(
+            "pyreplab_harness.orchestrator.remote_json",
+            return_value={"id": "task-1"},
+        ) as remote:
+            _task_json(config, fixture_args)
+        arguments = remote.call_args.args[1]
+        self.assertEqual(arguments[arguments.index("--task-role") + 1], "T_canary")
+        # routing_fixture has no template parameter.
+        self.assertNotIn("--fixture-template", arguments)
+
+    def test_routing_fixture_result_includes_controller_commitment(self) -> None:
+        treatment = TreatmentSpec(
+            id="routing-fixture",
+            version="1",
+            system_prompt="Use routing fixture.",
+            allowed_tools=("bash", "unbrowser"),
+            max_output_tokens=256,
+            tool_call_limit=2,
+            command_timeout_seconds=10,
+            wall_time_limit_seconds=30,
+            tool_interface=UNBROWSER_INTERACTIVE_TOOL_INTERFACE,
+        )
+        policies = {
+            treatment.bundle_id: policy_spec_from_treatment(treatment)
+        }
+        args = argparse.Namespace(
+            family="routing_fixture",
+            seed=3,
+            difficulty="easy",
+            preserve_treatment_order=True,
+        )
+        task = {
+            "id": "routing-fixture-rf-test",
+            "family": "routing_fixture",
+            "prompt": "task",
+            "public_metadata": {
+                "allowed_url": "http://127.0.0.1:18090/routing/rf-test"
+            },
+        }
+        commitment = {
+            "source_sha256": "a" * 64,
+            "probe_features_sha256": "b" * 64,
+            "probe_receipt_sha256": "c" * 64,
+        }
+
+        def remote(_config, arguments, **_kwargs):
+            self.assertEqual(arguments[0], "routing-commitment")
+            return commitment
+
+        with mock.patch(
+            "pyreplab_harness.orchestrator._task_json", return_value=task
+        ), mock.patch(
+            "pyreplab_harness.orchestrator.remote_json", side_effect=remote
+        ), mock.patch(
+            "pyreplab_harness.orchestrator._run_attempt",
+            return_value={
+                "attempt_id": "attempt-1",
+                "policy": policies[treatment.bundle_id].to_dict(),
+                "pi_return_code": 0,
+                "pi_stderr": "",
+                "verification": {"success": True},
+            },
+        ):
+            result = _run_policy_set(
+                PROJECT_ROOT,
+                RemoteConfig("host", "/project", "/runs"),
+                args,
+                policies,
+                mode="treatment_set",
+            )
+        self.assertEqual(result["task_commitments"], commitment)
+
+
+class AttemptIdsByTreatmentTest(unittest.TestCase):
+    """Tests for explicit planned attempt-id plumbing in _run_policy_set."""
+
+    def _policies(self, n: int = 2, seed: int = 21) -> dict:
+        treatments = generate_treatments(n, seed=seed)
+        return {
+            treatment.bundle_id: policy_spec_from_treatment(treatment)
+            for treatment in treatments
+        }
+
+    def test_supplied_attempt_ids_are_used_verbatim(self) -> None:
+        policies = self._policies()
+        planned = {
+            ref: f"planned-{index}-attempt"
+            for index, ref in enumerate(sorted(policies))
+        }
+        args = argparse.Namespace(
+            seed=3,
+            family="artifact",
+            attempt_ids_by_treatment=planned,
+        )
+        config = RemoteConfig("host", "/project", "/runs")
+        seen: list[str] = []
+
+        def fake_attempt(_root, _config, task, policy, attempt_id, _args, **_kw):
+            seen.append(attempt_id)
+            return {
+                "attempt_id": attempt_id,
+                "policy": policy.to_dict(),
+                "pi_return_code": 0,
+                "pi_stderr": "",
+                "verification": {"success": True},
+            }
+
+        with mock.patch(
+            "pyreplab_harness.orchestrator._task_json",
+            return_value={"id": "artifact-task-3", "prompt": "task"},
+        ), mock.patch(
+            "pyreplab_harness.orchestrator._run_attempt", side_effect=fake_attempt
+        ):
+            result = _run_policy_set(
+                PROJECT_ROOT,
+                config,
+                args,
+                policies,
+                mode="treatment_set",
+            )
+        self.assertEqual(sorted(seen), sorted(planned.values()))
+        for attempt_id in result["attempts"].values():
+            self.assertIn(attempt_id["attempt_id"], planned.values())
+
+    def test_wrong_keys_are_rejected(self) -> None:
+        policies = self._policies()
+        args = argparse.Namespace(
+            seed=3,
+            family="artifact",
+            attempt_ids_by_treatment={"wrong-key": "planned-0"},
+        )
+        config = RemoteConfig("host", "/project", "/runs")
+        with mock.patch(
+            "pyreplab_harness.orchestrator._task_json",
+            return_value={"id": "artifact-task-3", "prompt": "task"},
+        ):
+            with self.assertRaisesRegex(ValueError, "exactly equal"):
+                _run_policy_set(
+                    PROJECT_ROOT,
+                    config,
+                    args,
+                    policies,
+                    mode="treatment_set",
+                )
+
+    def test_unsafe_attempt_ids_are_rejected(self) -> None:
+        policies = self._policies()
+        planned = {ref: "not/safe" for ref in policies}
+        args = argparse.Namespace(
+            seed=3,
+            family="artifact",
+            attempt_ids_by_treatment=planned,
+        )
+        config = RemoteConfig("host", "/project", "/runs")
+        with mock.patch(
+            "pyreplab_harness.orchestrator._task_json",
+            return_value={"id": "artifact-task-3", "prompt": "task"},
+        ):
+            with self.assertRaisesRegex(ValueError, "invalid attempt id"):
+                _run_policy_set(
+                    PROJECT_ROOT,
+                    config,
+                    args,
+                    policies,
+                    mode="treatment_set",
+                )
+
+    def test_duplicate_attempt_ids_are_rejected(self) -> None:
+        policies = self._policies()
+        planned = {ref: "same-attempt-id" for ref in policies}
+        args = argparse.Namespace(
+            seed=3,
+            family="artifact",
+            attempt_ids_by_treatment=planned,
+        )
+        config = RemoteConfig("host", "/project", "/runs")
+        with mock.patch(
+            "pyreplab_harness.orchestrator._task_json",
+            return_value={"id": "artifact-task-3", "prompt": "task"},
+        ):
+            with self.assertRaisesRegex(ValueError, "unique"):
+                _run_policy_set(
+                    PROJECT_ROOT,
+                    config,
+                    args,
+                    policies,
+                    mode="treatment_set",
+                )
+
+    def test_non_mapping_is_rejected(self) -> None:
+        policies = self._policies()
+        args = argparse.Namespace(
+            seed=3,
+            family="artifact",
+            attempt_ids_by_treatment=["planned-0"],
+        )
+        config = RemoteConfig("host", "/project", "/runs")
+        with mock.patch(
+            "pyreplab_harness.orchestrator._task_json",
+            return_value={"id": "artifact-task-3", "prompt": "task"},
+        ):
+            with self.assertRaisesRegex(ValueError, "must be a mapping"):
+                _run_policy_set(
+                    PROJECT_ROOT,
+                    config,
+                    args,
+                    policies,
+                    mode="treatment_set",
+                )
 
 
 if __name__ == "__main__":

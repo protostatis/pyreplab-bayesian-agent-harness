@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import sys
+import urllib.request
 from pathlib import Path
 from typing import Any
 
@@ -13,9 +15,12 @@ from .artifact_gym import (
     verify_artifact_attempt,
 )
 from .events import normalize_pi_events
+from .fixture_server import FixtureServer
 from .fixture_templates import TEMPLATES as _FIXTURE_TEMPLATES
 from .gym_registry import FAMILIES, generate_task, verify_attempt
 from .worker import add_worker_arguments, run_from_args
+from .structural_probe import structural_probe
+from .unbrowser_rpc import validate_interactive_url
 
 
 def _emit(value: Any) -> None:
@@ -40,7 +45,7 @@ def build_parser() -> argparse.ArgumentParser:
     generate.add_argument(
         "--task-role",
         default=None,
-        help="frozen protocol role (only supported by unbrowser_fixture)",
+        help="frozen protocol role (only supported by unbrowser_fixture and routing_fixture)",
     )
 
     generate_artifact = subparsers.add_parser("generate-artifact")
@@ -78,6 +83,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     normalize = subparsers.add_parser("normalize-events")
     normalize.add_argument("path", nargs="?", default="-")
+
+    commitment = subparsers.add_parser("routing-commitment")
+    commitment.add_argument("--url", required=True)
 
     worker = subparsers.add_parser("serve-worker")
     add_worker_arguments(worker)
@@ -124,6 +132,45 @@ def main(argv: list[str] | None = None) -> int:
     elif args.command == "normalize-events":
         raw = sys.stdin.read() if args.path == "-" else Path(args.path).read_text(encoding="utf-8")
         _emit(normalize_pi_events(raw))
+    elif args.command == "routing-commitment":
+        url = validate_interactive_url(args.url, allow_fixture=True)
+        if "/routing/" not in url:
+            raise ValueError("routing-commitment requires an opaque routing fixture URL")
+        server = FixtureServer(port=18090)
+        try:
+            with urllib.request.urlopen(url, timeout=10) as response:
+                source = response.read(262145)
+                final_url = response.geturl()
+                status = response.status
+        finally:
+            server.stop()
+        if final_url != url or status != 200:
+            raise ValueError("routing fixture commitment fetch changed URL or status")
+        if len(source) > 262144:
+            raise ValueError("routing fixture source exceeds 262144 bytes")
+        html = source.decode("utf-8")
+        probe = structural_probe(html)
+        _emit(
+            {
+                "source_sha256": hashlib.sha256(source).hexdigest(),
+                "probe_features_sha256": hashlib.sha256(
+                    json.dumps(
+                        probe["features"],
+                        sort_keys=True,
+                        ensure_ascii=False,
+                        separators=(",", ":"),
+                    ).encode("utf-8")
+                ).hexdigest(),
+                "probe_receipt_sha256": hashlib.sha256(
+                    json.dumps(
+                        probe["receipt"],
+                        sort_keys=True,
+                        ensure_ascii=False,
+                        separators=(",", ":"),
+                    ).encode("utf-8")
+                ).hexdigest(),
+            }
+        )
     elif args.command == "serve-worker":
         return run_from_args(args)
     else:  # pragma: no cover - argparse enforces the command set.

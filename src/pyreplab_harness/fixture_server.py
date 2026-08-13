@@ -18,6 +18,13 @@ from .fixture_templates import (
     generate_page,
     generate_nonce,
 )
+from .routing_fixtures import build_stage_b_design, render_state as _routing_render_state
+
+
+#: Frozen private Stage-B routing design, indexed by opaque fixture id.  Built
+#: once at import time; deterministic and read-only thereafter.
+_ROUTING_DESIGN = build_stage_b_design()
+_ROUTING_BY_ID = {coord["fixture_id"]: coord for coord in _ROUTING_DESIGN}
 
 
 # ---------------------------------------------------------------------------
@@ -36,9 +43,13 @@ class _FixtureHandler(BaseHTTPRequestHandler):
         path = parsed.path.rstrip("/") or "/"
         query_params = dict(urllib.parse.parse_qsl(parsed.query))
 
-        # Path: /<template>/<seed>/<difficulty>[/<remainder>...]
         parts = [p for p in path.split("/") if p]
 
+        if parts and parts[0] == "routing":
+            self._serve_routing(parts[1:], query_params)
+            return
+
+        # Path: /<template>/<seed>/<difficulty>[/<remainder>...]
         if len(parts) < 3:
             self._send_error(400, "URL must be /<template>/<seed>/<difficulty>[/<page>]")
             return
@@ -76,6 +87,39 @@ class _FixtureHandler(BaseHTTPRequestHandler):
 
         body = fixture.html.encode("utf-8")
         self.send_response(fixture.status)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _serve_routing(
+        self, parts: list[str], query_params: dict[str, str]
+    ) -> None:
+        """Serve the opaque same-origin Stage-B routing route.
+
+        The route is ``/routing/<fixture_id>``.  The fixture id is opaque and
+        the served HTML is produced only from the frozen Stage-B design via
+        ``render_state`` (initial HTML for an empty query, transition HTML
+        otherwise).  Unknown fixture ids return 404.
+        """
+        if len(parts) != 1:
+            self._send_error(404, "URL must be /routing/<fixture_id>")
+            return
+
+        fixture_id = parts[0]
+        coord = _ROUTING_BY_ID.get(fixture_id)
+        if coord is None:
+            self._send_error(404, f"Unknown routing fixture id: {fixture_id!r}")
+            return
+
+        try:
+            html = _routing_render_state(coord, query_params or None)
+        except Exception as exc:
+            self._send_error(500, f"Routing page generation failed: {exc}")
+            return
+
+        body = html.encode("utf-8")
+        self.send_response(200)
         self.send_header("Content-Type", "text/html; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
@@ -169,6 +213,28 @@ class FixtureServer:
     ) -> str:
         """Return the deterministic nonce for a fixture."""
         return generate_nonce(template, seed, difficulty)
+
+    def routing_url_for(self, fixture_id: str) -> str:
+        """Return the opaque same-origin URL for a Stage-B routing fixture."""
+        return f"{self.base_url}/routing/{fixture_id}"
+
+    def routing_oracle_for(self, fixture_id: str) -> dict[str, Any]:
+        """Return the hidden private oracle for a Stage-B routing fixture.
+
+        Deterministic and thread-safe (read-only lookup into the frozen
+        design).  Raises ``KeyError`` for an unknown fixture id.
+        """
+        coord = _ROUTING_BY_ID.get(fixture_id)
+        if coord is None:
+            raise KeyError(f"unknown routing fixture id: {fixture_id!r}")
+        return dict(coord["oracle"])
+
+    def routing_nonce_for(self, fixture_id: str) -> str:
+        """Return the deterministic nonce for a Stage-B routing fixture."""
+        coord = _ROUTING_BY_ID.get(fixture_id)
+        if coord is None:
+            raise KeyError(f"unknown routing fixture id: {fixture_id!r}")
+        return str(coord["nonce"])
 
     def stop(self) -> None:
         """Shut down the server gracefully."""

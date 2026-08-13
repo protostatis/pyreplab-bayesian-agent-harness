@@ -26,6 +26,11 @@ pyreplab-unbrowser-smoke = "pyreplab_harness.unbrowser_smoke:main"
 pyreplab-unbrowser-interactive-smoke = "pyreplab_harness.unbrowser_interactive_smoke:main"
 pyreplab-outcome-model-smoke = "pyreplab_harness.outcome_model_smoke:main"
 pyreplab-outcome-model-learn-smoke = "pyreplab_harness.outcome_model_learn_smoke:main"
+pyreplab-m3-exploratory-screen = "pyreplab_harness.m3_exploratory_screen:main"
+pyreplab-m3-observation-canary-gate = "pyreplab_harness.m3_observation_canary_gate:main"
+pyreplab-m3-semantic-capability-gate = "pyreplab_harness.m3_semantic_capability_gate:main"
+pyreplab-m3-semantic-diagnostic = "pyreplab_harness.m3_semantic_diagnostic:main"
+pyreplab-m3-utility-routing-smoke = "pyreplab_harness.m3_utility_routing_smoke:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

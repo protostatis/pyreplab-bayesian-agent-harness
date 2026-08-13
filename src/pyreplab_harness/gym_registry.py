@@ -23,6 +23,10 @@ from .artifact_gym import (
 )
 from .contracts import AttemptRecord, TaskSpec, VerificationResult
 from .python_repair_gym import generate_python_repair_task, verify_python_repair_attempt
+from .routing_fixture_gym import (
+    generate_routing_fixture_task,
+    verify_routing_fixture_attempt,
+)
 from .shell_gym import generate_shell_task, verify_shell_attempt
 from .sqlite_gym import generate_sqlite_task, verify_sqlite_attempt
 from .unbrowser_gym import generate_unbrowser_task, verify_unbrowser_attempt
@@ -44,6 +48,7 @@ FAMILIES: tuple[str, ...] = (
     "unbrowser",
     "unbrowser_interactive",
     "unbrowser_fixture",
+    "routing_fixture",
 )
 
 _REGISTRY: dict[str, dict[str, Callable[..., Any]]] = {
@@ -75,6 +80,10 @@ _REGISTRY: dict[str, dict[str, Callable[..., Any]]] = {
         "generate": generate_unbrowser_fixture_task,
         "verify": verify_unbrowser_fixture_attempt,
     },
+    "routing_fixture": {
+        "generate": generate_routing_fixture_task,
+        "verify": verify_routing_fixture_attempt,
+    },
 }
 
 
@@ -98,6 +107,8 @@ def generate_task(
 
     ``fixture_template`` is only honoured when ``family`` is
     ``unbrowser_fixture``; for every other family it is silently ignored.
+    ``task_role`` is only honoured by ``unbrowser_fixture`` and
+    ``routing_fixture``.
     """
     generate_fn = _lookup(family)["generate"]
     if family == "unbrowser_fixture":
@@ -108,8 +119,12 @@ def generate_task(
             template=fixture_template,
             task_role=task_role,
         )
+    if family == "routing_fixture":
+        return generate_fn(root, seed, difficulty, task_role=task_role)
     if task_role is not None:
-        raise ValueError("task_role is only supported for unbrowser_fixture")
+        raise ValueError(
+            "task_role is only supported for unbrowser_fixture and routing_fixture"
+        )
     return generate_fn(root, seed, difficulty)
 
 

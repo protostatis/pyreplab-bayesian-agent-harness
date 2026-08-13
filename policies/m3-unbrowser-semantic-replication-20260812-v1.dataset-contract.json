@@ -1,0 +1,70 @@
+{
+  "allowed_uses": [
+    "audit",
+    "mechanics_validation",
+    "descriptive_screening",
+    "error_analysis",
+    "future_experiment_design"
+  ],
+  "contract_hash": "1c41142e78af868aa5fbb25bfb832706419e580ebdc6d2528d3d0cfd3e291af6",
+  "dataset_id": "m3-semantic-replication-20260812-v1",
+  "failure_policy": {
+    "infrastructure_or_controller_failure": "invalidates outcome interpretation; never convert to task failure",
+    "model_or_tool_failure_with_valid_verification": "retain as intention-to-treat task outcome",
+    "outcome_driven_replacement": false,
+    "silent_attempt_replacement": false
+  },
+  "governance_role": "canary_excluded",
+  "license_status": "internal-research-only pending model-output redistribution review",
+  "planned": {
+    "attempts": 96,
+    "bundle_ids": [
+      "ub-direct-semantic-table-submit-directly-diagnose-retry-expanded@1-canary-excluded-c618fe8c",
+      "ub-direct-semantic-form-submit-directly-diagnose-retry-expanded@1-canary-excluded-d9b3e25a"
+    ],
+    "rollout_replicas": 3,
+    "tasks": [
+      "unbrowser-fixture-v2-table_filter_sort-easy-2026087201",
+      "unbrowser-fixture-v2-table_filter_sort-medium-2026087202",
+      "unbrowser-fixture-v2-table_filter_sort-hard-2026087203",
+      "unbrowser-fixture-v2-table_filter_sort-medium-2026087204",
+      "unbrowser-fixture-v2-table_filter_sort-easy-2026087205",
+      "unbrowser-fixture-v2-table_filter_sort-medium-2026087206",
+      "unbrowser-fixture-v2-table_filter_sort-hard-2026087207",
+      "unbrowser-fixture-v2-table_filter_sort-medium-2026087208",
+      "unbrowser-fixture-v2-form_entry_validation-easy-2026087209",
+      "unbrowser-fixture-v2-form_entry_validation-medium-2026087210",
+      "unbrowser-fixture-v2-form_entry_validation-hard-2026087211",
+      "unbrowser-fixture-v2-form_entry_validation-medium-2026087212",
+      "unbrowser-fixture-v2-form_entry_validation-easy-2026087213",
+      "unbrowser-fixture-v2-form_entry_validation-medium-2026087214",
+      "unbrowser-fixture-v2-form_entry_validation-hard-2026087215",
+      "unbrowser-fixture-v2-form_entry_validation-medium-2026087216"
+    ]
+  },
+  "policy_split_manifest_hash": "b43beb64ee9710bde1dbb604baf46b32326667c7ff111ea7efdfee0bbb9971f6",
+  "prohibited_uses": [
+    "current_m3_meta_training",
+    "current_m3_calibration",
+    "current_m3_development",
+    "current_m3_final_evaluation",
+    "allocator_training_or_selection",
+    "causal_treatment_claims",
+    "population_generalization_claims"
+  ],
+  "purpose": "Audit-ready replication dataset for repeat-stable table and form specialist niches on fresh synthetic fixture tasks.",
+  "raw_retention": {
+    "access": "restricted local research storage",
+    "contents": "task manifests, attempt manifests, raw and normalized Pi events, verification, and workspaces",
+    "derived_release": "privacy-scanned rows omit messages, thinking, tool payloads, diagnostics, stderr, private oracle data, and absolute paths",
+    "minimum_retention": "retain through experiment adjudication and dataset verification"
+  },
+  "registry_hash": "8787f3126c5e38f2d6d87187897301716d84703b35642c1216837d650934f777",
+  "schema_version": "m3-semantic-dataset-contract-v1",
+  "task_role": "T_canary",
+  "unit_of_analysis": {
+    "independent_generalization_unit": "task",
+    "paired_unit": "task-replica panel",
+    "row_unit": "planned task-arm-replica cell"
+  }
+}

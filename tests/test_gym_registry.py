@@ -17,13 +17,31 @@ from pyreplab_harness.orchestrator import (
     build_parser,
     run_smoke,
 )
+from pyreplab_harness.routing_fixtures import build_stage_b_design
+
+
+def _routing_fixture_seed(difficulty: str = "easy") -> int:
+    """Return a valid frozen Stage-B seed for the requested difficulty."""
+    for coord in build_stage_b_design():
+        if coord["difficulty"] == difficulty:
+            return coord["seed"]
+    raise AssertionError(f"no Stage-B coordinate with difficulty {difficulty!r}")
 
 
 class RegistryTest(unittest.TestCase):
     def test_canonical_families(self) -> None:
         self.assertEqual(
             FAMILIES,
-            ("artifact", "sqlite", "shell", "python_repair", "unbrowser", "unbrowser_interactive", "unbrowser_fixture"),
+            (
+                "artifact",
+                "sqlite",
+                "shell",
+                "python_repair",
+                "unbrowser",
+                "unbrowser_interactive",
+                "unbrowser_fixture",
+                "routing_fixture",
+            ),
         )
 
     def test_generate_task_rejects_unknown_family(self) -> None:
@@ -42,7 +60,13 @@ class RegistryTest(unittest.TestCase):
         for family in FAMILIES:
             with self.subTest(family=family):
                 with tempfile.TemporaryDirectory() as directory:
-                    task = generate_task(family, directory, 42, "easy")
+                    seed = 42
+                    difficulty = "easy"
+                    if family == "routing_fixture":
+                        # routing_fixture selects an exact frozen Stage-B
+                        # coordinate by seed, so seed 42 is not valid.
+                        seed = _routing_fixture_seed("easy")
+                    task = generate_task(family, directory, seed, difficulty)
                     self.assertEqual(task.family, family)
                     self.assertEqual(task.difficulty, "easy")
                     attempt = prepare_attempt(
@@ -271,6 +295,54 @@ class RegistryTest(unittest.TestCase):
                 generate_task(
                     "artifact", directory, 4, "easy", task_role="T_pilot"
                 )
+
+    def test_routing_fixture_accepts_task_role(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            seed = _routing_fixture_seed("easy")
+            task = generate_task(
+                "routing_fixture",
+                directory,
+                seed,
+                "easy",
+                task_role="T_canary",
+            )
+            self.assertEqual(task.family, "routing_fixture")
+            self.assertEqual(task.public_metadata["task_role"], "T_canary")
+
+    def test_routing_fixture_rejects_wrong_difficulty(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            seed = _routing_fixture_seed("easy")
+            with self.assertRaisesRegex(ValueError, "difficulty"):
+                generate_task("routing_fixture", directory, seed, "hard")
+
+    def test_cli_generate_routing_fixture_dispatches(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            seed = _routing_fixture_seed("easy")
+            buffer = io.StringIO()
+            with redirect_stdout(buffer):
+                code = cli_main(
+                    [
+                        "generate",
+                        "--family",
+                        "routing_fixture",
+                        "--root",
+                        directory,
+                        "--seed",
+                        str(seed),
+                        "--difficulty",
+                        "easy",
+                        "--task-role",
+                        "T_canary",
+                    ]
+                )
+            self.assertEqual(code, 0)
+            task = json.loads(buffer.getvalue())
+            self.assertEqual(task["family"], "routing_fixture")
+            self.assertEqual(task["public_metadata"]["task_role"], "T_canary")
+            self.assertTrue(task["id"].startswith("routing-fixture-"))
+            self.assertIn(
+                "/routing/", task["public_metadata"]["allowed_url"]
+            )
 
 
 class OrchestratorTest(unittest.TestCase):

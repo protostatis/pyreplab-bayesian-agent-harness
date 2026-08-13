@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import itertools
 import json
 import tempfile
@@ -201,11 +202,137 @@ class M3PilotManifestTest(unittest.TestCase):
                 "version: 1 (abc)",
             )
 
+    def test_runtime_preflight_require_clean_default_raises_on_dirty(self) -> None:
+        from pyreplab_harness.m3_pilot import runtime_preflight
+        from unittest.mock import patch, MagicMock
+
+        with patch(
+            "pyreplab_harness.m3_pilot._run_checked",
+            return_value=" M dirty.py\n",
+        ), patch("pyreplab_harness.m3_pilot.validate_remote_config"), patch(
+            "pyreplab_harness.m3_pilot._sha256_file",
+            return_value="a" * 64,
+        ), patch(
+            "pyreplab_harness.m3_pilot._pi_provider_identity",
+            return_value={},
+        ), patch(
+            "pyreplab_harness.m3_pilot._model_endpoint_entry",
+            return_value={"status": {"args": ["/tmp/llama-server", "--parallel", "1", "--threads", "8"]}},
+        ), patch(
+            "pyreplab_harness.m3_pilot._ssh_capture",
+        ) as ssh:
+            ssh.side_effect = lambda *a, **kw: {
+                "pi_version": "0.84.1",
+                "code_revision": "a" * 40,
+                "source_tree_hash": "b" * 64,
+            }.get(kw.get("stderr_fallback", False) and "version" or "", "ok")
+
+            config = RemoteConfig("host", "/p", "/r", "python3")
+            with self.assertRaises(RuntimeError):
+                runtime_preflight(
+                    Path("/tmp/fake-root"),
+                    config,
+                    pi_binary="/tmp/pi",
+                    thinking="off",
+                    unbrowser_binary="/tmp/unbrowser",
+                    model_artifact="/tmp/model.gguf",
+                    llama_server_binary="/tmp/llama-server",
+                )  # require_clean=True by default
+
+    def test_runtime_preflight_require_clean_false_returns_worktree_fields(
+        self,
+    ) -> None:
+        from pyreplab_harness.m3_pilot import _RUNTIME_PINS, runtime_preflight
+
+        dirty = " M dirty.py\n"
+        server = _RUNTIME_PINS["llama_server_path"]
+        model = _RUNTIME_PINS["model_artifact_path"]
+        server_args = [server, "--model", model]
+        for required in _RUNTIME_PINS["llama_server_required_args"]:
+            server_args.extend(required.split())
+
+        def run_checked(command, **_kwargs):
+            if command[:3] == ["git", "status", "--porcelain"]:
+                return dirty
+            if command[:3] == ["git", "rev-parse", "HEAD"]:
+                return "abc123"
+            if command[-1] == "--version":
+                return _RUNTIME_PINS["pi_version"]
+            raise AssertionError(command)
+
+        def ssh_capture(_host, command, **_kwargs):
+            joined = " ".join(command)
+            if "source-hash" in command:
+                return "source-hash"
+            if "confined-unbrowser-check" in command:
+                return f"unbrowser {_RUNTIME_PINS['unbrowser_version']}"
+            if command[0] == "sha256sum":
+                hashes = {
+                    _RUNTIME_PINS["unbrowser_path"]: _RUNTIME_PINS["unbrowser_sha256"],
+                    model: _RUNTIME_PINS["model_artifact_sha256"],
+                    server: _RUNTIME_PINS["llama_server_sha256"],
+                }
+                return f"{hashes[command[1]]}  {command[1]}"
+            if command == [server, "--version"]:
+                return _RUNTIME_PINS["llama_server_version"]
+            if command == ["bwrap", "--version"]:
+                return _RUNTIME_PINS["bubblewrap_version"]
+            if "model-endpoint-entry" in command:
+                return json.dumps({"status": {"args": server_args}})
+            if "fixture-port-check" in command:
+                return "available"
+            raise AssertionError(joined)
+
+        pi_path = "/tmp/node_modules/@earendil-works/pi-coding-agent/pi"
+        with patch(
+            "pyreplab_harness.m3_pilot._run_checked", side_effect=run_checked
+        ), patch(
+            "pyreplab_harness.m3_pilot.validate_remote_config"
+        ), patch(
+            "pyreplab_harness.m3_pilot.shutil.which", return_value=pi_path
+        ), patch(
+            "pyreplab_harness.m3_pilot._sha256_file",
+            return_value=_RUNTIME_PINS["pi_cli_sha256"],
+        ), patch(
+            "pyreplab_harness.m3_pilot._pi_provider_identity",
+            return_value=_RUNTIME_PINS["pi_provider_config"],
+        ), patch(
+            "pyreplab_harness.m3_pilot.source_tree_hash",
+            return_value="source-hash",
+        ), patch(
+            "pyreplab_harness.m3_pilot._model_endpoint_entry",
+            return_value={"status": {"args": server_args}},
+        ), patch(
+            "pyreplab_harness.m3_pilot._ssh_capture", side_effect=ssh_capture
+        ):
+            report = runtime_preflight(
+                Path("/tmp/fake-root"),
+                RemoteConfig("host", "/p", "/r", "python3"),
+                pi_binary="pi",
+                thinking="off",
+                unbrowser_binary=_RUNTIME_PINS["unbrowser_path"],
+                model_artifact=model,
+                llama_server_binary=server,
+                require_clean=False,
+            )
+
+        self.assertFalse(report["worktree_clean"])
+        self.assertEqual(
+            report["worktree_status_hash"],
+            hashlib.sha256(dirty.encode("utf-8")).hexdigest(),
+        )
+        self.assertEqual(report["source_tree_hash"], "source-hash")
+        self.assertEqual(report["runtime_pins"], _RUNTIME_PINS)
+
     def test_interrupted_panel_marker_blocks_resume(self) -> None:
         runtime = {
             "checked_at": "2026-08-10T00:00:00+00:00",
             "code_revision": "a" * 40,
             "source_tree_hash": "b" * 64,
+            "worktree_clean": True,
+            "worktree_status_hash": hashlib.sha256(
+                b"PYREPLAB_GIT_WORKTREE_CLEAN_MARKER_V1"
+            ).hexdigest(),
             "runtime_pins": self.manifest["runtime_pins"],
         }
         with tempfile.TemporaryDirectory() as directory:
