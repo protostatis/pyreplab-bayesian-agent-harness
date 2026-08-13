@@ -8,6 +8,7 @@ from contextlib import redirect_stdout
 from pathlib import Path
 
 from pyreplab_harness import external_o1 as o1
+from pyreplab_harness.treatments import TreatmentRegistry, treatment_model_input_descriptor
 
 
 def _source(task_id: str, resolved: bool | None, project: str = "org") -> dict:
@@ -66,8 +67,9 @@ class O1NormalizerTest(unittest.TestCase):
         ]
 
     def test_complete_pairs_and_paired_table(self) -> None:
+        registry_obj = o1.build_o1_treatment_registry_object()
         rows, registry, exclusions, summary = o1.build_o1_dataset(
-            self.baseline, self.native, self.tasks
+            self.baseline, self.native, self.tasks, registry_obj
         )
         self.assertEqual(summary["paired_tasks"], 4)
         self.assertEqual(summary["rows"], 8)
@@ -82,9 +84,18 @@ class O1NormalizerTest(unittest.TestCase):
         )
         self.assertEqual(summary["success"], {"baseline": 2, "native": 2})
         self.assertEqual(
-            {item["treatment_id"] for item in registry["treatments"]},
+            {item["id"] for item in registry["treatments"]},
             {o1.BASELINE_TREATMENT_ID, o1.NATIVE_TREATMENT_ID},
         )
+        self.assertEqual(registry["registry_hash"], registry_obj.registry_hash)
+        for row in rows:
+            spec = registry_obj.by_id(row["policy_id"])
+            self.assertEqual(row["treatment_bundle_id"], spec.bundle_id)
+            self.assertEqual(row["treatment_bundle_hash"], spec.bundle_hash)
+            self.assertEqual(row["treatment_registry_hash"], registry_obj.registry_hash)
+            descriptor = treatment_model_input_descriptor(spec)
+            self.assertEqual(set(row["model_input"]["treatment"]), set(descriptor))
+            self.assertEqual(row["model_input"]["treatment"], descriptor)
         self.assertEqual(exclusions["excluded_task_count"], 3)
         self.assertEqual(
             exclusions["reason_counts"],
@@ -97,7 +108,10 @@ class O1NormalizerTest(unittest.TestCase):
 
     def test_pair_features_are_identical_except_treatment(self) -> None:
         rows, _registry, _exclusions, _summary = o1.build_o1_dataset(
-            self.baseline, self.native, self.tasks
+            self.baseline,
+            self.native,
+            self.tasks,
+            o1.build_o1_treatment_registry_object(),
         )
         pair = [row for row in rows if row["task_id"] == "native-only"]
         self.assertEqual(len(pair), 2)
@@ -123,7 +137,10 @@ class O1NormalizerTest(unittest.TestCase):
 
     def test_post_action_and_oracle_fields_never_enter_model_input(self) -> None:
         rows, _registry, _exclusions, _summary = o1.build_o1_dataset(
-            self.baseline, self.native, self.tasks
+            self.baseline,
+            self.native,
+            self.tasks,
+            o1.build_o1_treatment_registry_object(),
         )
         forbidden = {
             "success",
@@ -143,7 +160,7 @@ class O1NormalizerTest(unittest.TestCase):
     def test_missing_canonical_task_excludes_whole_pair(self) -> None:
         tasks = [task for task in self.tasks if task["instance_id"] != "both-pass"]
         rows, _registry, exclusions, summary = o1.build_o1_dataset(
-            self.baseline, self.native, tasks
+            self.baseline, self.native, tasks, o1.build_o1_treatment_registry_object()
         )
         self.assertEqual(summary["paired_tasks"], 3)
         self.assertFalse(any(row["task_id"] == "both-pass" for row in rows))
@@ -151,14 +168,18 @@ class O1NormalizerTest(unittest.TestCase):
         self.assertEqual(entry["reasons"], ["PAIR_EXCLUDE_CANONICAL_TASK_MISSING"])
 
     def test_duplicate_or_non_boolean_outcomes_fail_closed(self) -> None:
+        registry = o1.build_o1_treatment_registry_object()
         with self.assertRaisesRegex(ValueError, "duplicate baseline ID"):
             o1.build_o1_dataset(
-                self.baseline + [_source("both-pass", True)], self.native, self.tasks
+                self.baseline + [_source("both-pass", True)],
+                self.native,
+                self.tasks,
+                registry,
             )
         malformed = list(self.baseline)
         malformed[0] = _source("both-pass", 1)  # type: ignore[arg-type]
         with self.assertRaisesRegex(ValueError, "must be bool or null"):
-            o1.build_o1_dataset(malformed, self.native, self.tasks)
+            o1.build_o1_dataset(malformed, self.native, self.tasks, registry)
 
 
 class O1WriterCliTest(unittest.TestCase):
@@ -190,8 +211,22 @@ class O1WriterCliTest(unittest.TestCase):
             o1.write_o1_dataset(baseline_path, native_path, tasks_path, second)
             self.assertEqual(first.read_bytes(), second.read_bytes())
             self.assertEqual(summary["paired_tasks"], 2)
-            self.assertTrue(Path(summary["registry_path"]).is_file())
+            registry_path = Path(summary["registry_path"])
+            self.assertTrue(registry_path.is_file())
             self.assertTrue(Path(summary["exclusions_path"]).is_file())
+
+            loaded = TreatmentRegistry.load(registry_path)
+            self.assertEqual(
+                loaded.registry_hash,
+                o1.build_o1_treatment_registry_object().registry_hash,
+            )
+            self.assertEqual(
+                [spec.id for spec in loaded],
+                [o1.BASELINE_TREATMENT_ID, o1.NATIVE_TREATMENT_ID],
+            )
+            first_row = json.loads(first.read_text(encoding="utf-8").splitlines()[0])
+            for key in ("treatment_bundle_id", "treatment_bundle_hash", "treatment_registry_hash"):
+                self.assertIn(key, first_row)
 
             output = root / "cli.jsonl"
             buffer = io.StringIO()
