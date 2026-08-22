@@ -21,10 +21,24 @@ from .gym_registry import FAMILIES, generate_task, verify_attempt
 from .worker import add_worker_arguments, run_from_args
 from .structural_probe import structural_probe
 from .unbrowser_rpc import validate_interactive_url
+from .unbrowser_fixture_gym import (
+    GENERATOR_VERSION as UNBROWSER_FIXTURE_GENERATOR_VERSION,
+    SUPPORTED_GENERATOR_VERSIONS as _FIXTURE_GENERATOR_VERSIONS,
+    unbrowser_fixture_task_commitment,
+)
 
 
 def _emit(value: Any) -> None:
     print(json.dumps(value, sort_keys=True, ensure_ascii=False))
+
+
+def _parse_budget_receipt_json(value: str | None) -> dict[str, Any] | None:
+    if value is None:
+        return None
+    receipt = json.loads(value)
+    if not isinstance(receipt, dict):
+        raise ValueError("budget receipt must be a JSON object")
+    return receipt
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -47,6 +61,12 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="frozen protocol role (only supported by unbrowser_fixture and routing_fixture)",
     )
+    generate.add_argument(
+        "--fixture-generator-version",
+        choices=_FIXTURE_GENERATOR_VERSIONS,
+        default=UNBROWSER_FIXTURE_GENERATOR_VERSION,
+        help="task generator version (only used when --family is unbrowser_fixture)",
+    )
 
     generate_artifact = subparsers.add_parser("generate-artifact")
     generate_artifact.add_argument("--root", required=True)
@@ -65,10 +85,12 @@ def build_parser() -> argparse.ArgumentParser:
     prepare.add_argument("--sampling-seed", type=int, default=None)
     prepare.add_argument("--pilot-manifest-hash", default=None)
     prepare.add_argument("--pilot-panel-id", default=None)
+    prepare.add_argument("--expected-task-commitment-hash", default=None)
 
     record = subparsers.add_parser("record-events")
     record.add_argument("--root", required=True)
     record.add_argument("--attempt-id", required=True)
+    record.add_argument("--budget-receipt-json", default=None)
 
     verify = subparsers.add_parser("verify")
     verify.add_argument("--family", choices=FAMILIES, required=True)
@@ -83,9 +105,14 @@ def build_parser() -> argparse.ArgumentParser:
 
     normalize = subparsers.add_parser("normalize-events")
     normalize.add_argument("path", nargs="?", default="-")
+    normalize.add_argument("--budget-receipt-json", default=None)
 
     commitment = subparsers.add_parser("routing-commitment")
     commitment.add_argument("--url", required=True)
+
+    fixture_commitment = subparsers.add_parser("fixture-task-commitment")
+    fixture_commitment.add_argument("--root", required=True)
+    fixture_commitment.add_argument("--task-id", required=True)
 
     worker = subparsers.add_parser("serve-worker")
     add_worker_arguments(worker)
@@ -101,6 +128,11 @@ def main(argv: list[str] | None = None) -> int:
                 args.family, args.root, args.seed, args.difficulty,
                 fixture_template=getattr(args, "fixture_template", "single_page_extraction"),
                 task_role=getattr(args, "task_role", None),
+                fixture_generator_version=getattr(
+                    args,
+                    "fixture_generator_version",
+                    UNBROWSER_FIXTURE_GENERATOR_VERSION,
+                ),
             ).to_dict()
         )
     elif args.command == "verify":
@@ -121,17 +153,24 @@ def main(argv: list[str] | None = None) -> int:
                 args.sampling_seed,
                 args.pilot_manifest_hash,
                 args.pilot_panel_id,
+                args.expected_task_commitment_hash,
             ).to_dict()
         )
     elif args.command == "record-events":
         raw = sys.stdin.read()
-        normalized = normalize_pi_events(raw)
+        normalized = normalize_pi_events(
+            raw, _parse_budget_receipt_json(args.budget_receipt_json)
+        )
         _emit(record_pi_events(args.root, args.attempt_id, raw, normalized).to_dict())
     elif args.command == "verify-artifact":
         _emit(verify_artifact_attempt(args.root, args.task_id, args.attempt_id).to_dict())
     elif args.command == "normalize-events":
         raw = sys.stdin.read() if args.path == "-" else Path(args.path).read_text(encoding="utf-8")
-        _emit(normalize_pi_events(raw))
+        _emit(
+            normalize_pi_events(
+                raw, _parse_budget_receipt_json(args.budget_receipt_json)
+            )
+        )
     elif args.command == "routing-commitment":
         url = validate_interactive_url(args.url, allow_fixture=True)
         if "/routing/" not in url:
@@ -171,6 +210,8 @@ def main(argv: list[str] | None = None) -> int:
                 ).hexdigest(),
             }
         )
+    elif args.command == "fixture-task-commitment":
+        _emit(unbrowser_fixture_task_commitment(args.root, args.task_id))
     elif args.command == "serve-worker":
         return run_from_args(args)
     else:  # pragma: no cover - argparse enforces the command set.

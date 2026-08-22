@@ -221,6 +221,7 @@ def prepare_attempt(
     sampling_seed: int | None = None,
     pilot_manifest_hash: str | None = None,
     pilot_panel_id: str | None = None,
+    expected_task_commitment_hash: str | None = None,
 ) -> AttemptRecord:
     root_path = _root(root)
     spec = load_task(root_path, task_id)
@@ -242,7 +243,33 @@ def prepare_attempt(
         raise ValueError("sampling_seed must be an integer in [0, 2147483647]")
     workspace = attempt_path / "workspace"
     attempt_path.mkdir(parents=True)
-    shutil.copytree(spec.workspace_ref, workspace)
+    oracle_snapshot_ref: str | None = None
+    oracle_snapshot_sha256: str | None = None
+    try:
+        shutil.copytree(spec.workspace_ref, workspace)
+        if expected_task_commitment_hash is not None:
+            from .unbrowser_fixture_gym import (
+                unbrowser_fixture_snapshot_commitment,
+                unbrowser_fixture_task_commitment,
+            )
+
+            source_commitment = unbrowser_fixture_task_commitment(
+                root_path, task_id
+            )
+            if source_commitment["commitment_hash"] != expected_task_commitment_hash:
+                raise ValueError("fixture task commitment mismatch before snapshot")
+            oracle_snapshot = attempt_path / "oracle.snapshot.json"
+            shutil.copy2(spec.verifier_ref, oracle_snapshot)
+            snapshot_commitment = unbrowser_fixture_snapshot_commitment(
+                spec, workspace, oracle_snapshot
+            )
+            if snapshot_commitment != source_commitment:
+                raise ValueError("fixture task changed while snapshotting attempt")
+            oracle_snapshot_ref = str(oracle_snapshot)
+            oracle_snapshot_sha256 = str(snapshot_commitment["oracle_sha256"])
+    except Exception:
+        shutil.rmtree(attempt_path, ignore_errors=True)
+        raise
     record = AttemptRecord(
         attempt_id=attempt_id,
         task_id=task_id,
@@ -256,6 +283,9 @@ def prepare_attempt(
         sampling_seed=sampling_seed,
         pilot_manifest_hash=pilot_manifest_hash,
         pilot_panel_id=pilot_panel_id,
+        task_commitment_hash=expected_task_commitment_hash,
+        oracle_snapshot_ref=oracle_snapshot_ref,
+        oracle_snapshot_sha256=oracle_snapshot_sha256,
     )
     write_json(attempt_path / "attempt.json", record.to_dict())
     return record

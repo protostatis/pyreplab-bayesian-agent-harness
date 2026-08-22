@@ -171,8 +171,10 @@ def _validate_version(value: str) -> str:
 def _validate_system_prompt(value: str) -> str:
     if not isinstance(value, str):
         raise TypeError(f"system_prompt must be str, got {type(value).__name__}")
+    if value == "":
+        return value
     if not value.strip():
-        raise ValueError("system_prompt must be a non-empty string")
+        raise ValueError("system_prompt must be empty or contain non-whitespace text")
     return value
 
 
@@ -259,7 +261,8 @@ class TreatmentSpec:
     additions: ``tool_interface`` (default ``"native_bash"``) and
     ``generator_metadata``.  Use :func:`to_policy_spec_kwargs` to obtain a
     dict suitable for constructing a ``PolicySpec`` without modifying
-    ``contracts.py``.
+    ``contracts.py``. An exact empty ``system_prompt`` represents a treatment
+    with no appended prompt overlay; whitespace-only prompts are invalid.
     """
 
     id: str
@@ -422,7 +425,8 @@ def treatment_model_input_descriptor(
     text_parts = []
     if task_text:
         text_parts.append(task_text)
-    text_parts.append(treatment.system_prompt)
+    if treatment.system_prompt:
+        text_parts.append(treatment.system_prompt)
     return {
         "text": "\n\n".join(text_parts),
         "max_output_tokens": treatment.max_output_tokens,

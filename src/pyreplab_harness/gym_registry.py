@@ -35,6 +35,7 @@ from .unbrowser_interactive_gym import (
     verify_unbrowser_interactive_attempt,
 )
 from .unbrowser_fixture_gym import (
+    GENERATOR_VERSION as UNBROWSER_FIXTURE_GENERATOR_VERSION,
     generate_unbrowser_fixture_task,
     verify_unbrowser_fixture_attempt,
 )
@@ -102,6 +103,7 @@ def generate_task(
     difficulty: str = "medium",
     fixture_template: str = "single_page_extraction",
     task_role: str | None = None,
+    fixture_generator_version: str = UNBROWSER_FIXTURE_GENERATOR_VERSION,
 ) -> TaskSpec:
     """Generate a deterministic task of ``family`` under ``root``.
 
@@ -118,6 +120,7 @@ def generate_task(
             difficulty,
             template=fixture_template,
             task_role=task_role,
+            generator_version=fixture_generator_version,
         )
     if family == "routing_fixture":
         return generate_fn(root, seed, difficulty, task_role=task_role)

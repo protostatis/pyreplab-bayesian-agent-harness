@@ -10,7 +10,7 @@ import subprocess
 import sys
 import time
 import uuid
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Mapping
@@ -24,6 +24,10 @@ from .unbrowser_rpc import (
     validate_interactive_url,
     validate_smoke_url,
 )
+from .unbrowser_fixture_gym import (
+    GENERATOR_VERSION as UNBROWSER_FIXTURE_GENERATOR_VERSION,
+    SUPPORTED_GENERATOR_VERSIONS as _FIXTURE_GENERATOR_VERSIONS,
+)
 
 
 UNBROWSER_TOOL_INTERFACE = "native_bash_unbrowser_readonly_v1"
@@ -32,6 +36,7 @@ UNBROWSER_INTERACTIVE_TEXT_FIRST_INTERFACE = "native_bash_unbrowser_interactive_
 UNBROWSER_INTERACTIVE_STRUCTURE_FIRST_INTERFACE = "native_bash_unbrowser_interactive_structure_first_v1"
 UNBROWSER_SEMANTIC_TABLE_INTERFACE = "native_bash_unbrowser_semantic_table_v1"
 UNBROWSER_SEMANTIC_FORM_INTERFACE = "native_bash_unbrowser_semantic_form_v1"
+RESTRICTED_BASELINE_EXECUTION_PATH = "dedicated_authorized_baseline_runner_v1"
 PINNED_SAMPLING_PARAMETERS: dict[str, int | float] = {
     "temperature": 0.8,
     "top_p": 0.95,
@@ -42,6 +47,7 @@ PINNED_SAMPLING_PARAMETERS: dict[str, int | float] = {
     "frequency_penalty": 0.0,
 }
 _SAMPLING_RECEIPT_PREFIX = "PYREPLAB_SAMPLING_V1 "
+_BUDGET_RECEIPT_PREFIX = "PYREPLAB_GYM_BUDGET_V3 "
 _ATTEMPT_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.@-]{0,127}$")
 
 
@@ -301,7 +307,7 @@ def _semantic_capability_from_interface(tool_interface: str) -> str | None:
     return None
 
 
-def _run_pi(
+def _build_pi_command(
     project_root: Path,
     config: RemoteConfig,
     workspace: str,
@@ -317,11 +323,13 @@ def _run_pi(
     unbrowser_interactive: bool = False,
     confine_unbrowser: bool = False,
     sampling_seed: int | None = None,
-) -> subprocess.CompletedProcess[str]:
+    api_key: str | None = None,
+) -> list[str]:
     # Keep the extension outside .pi/extensions so normal Pi sessions in this
     # repository never auto-discover the restrictive gym tool configuration.
     gym_extension = project_root / "pi_extensions" / "gym-tools.ts"
-    budget_extension = project_root / "pi_extensions" / "gym-budget-v2.ts"
+    budget_extension = project_root / "pi_extensions" / "gym-budget-v3.ts"
+    enforce_budget = policy.enforce_budget or policy.version in {"2", "3", "4"}
     active_tools = tuple(sorted(policy.allowed_tools))
     unsupported_tools = set(active_tools) - {"bash", "unbrowser", "semantic_table", "semantic_form"}
     if unsupported_tools:
@@ -381,10 +389,14 @@ def _run_pi(
         "--no-extensions",
         "--no-approve",
     ]
+    # Keyless local custom providers (Pi docs) require an explicit API key;
+    # the prompt-only pilot threads its fixed non-secret dummy key here.
+    if api_key is not None:
+        command.extend(["--api-key", api_key])
     if model_switch_extension is not None:
         command.extend(["--extension", str(model_switch_extension)])
     command.extend(["--extension", str(gym_extension)])
-    if policy.enforce_budget or policy.version in {"2", "3", "4"}:
+    if enforce_budget:
         command.extend(["--extension", str(budget_extension)])
     command.extend(
         [
@@ -412,6 +424,10 @@ def _run_pi(
             str(policy.max_output_tokens),
         ]
     )
+    if enforce_budget:
+        command.extend(
+            ["--gym-provider-turn-limit", str(policy.tool_call_limit + 1)]
+        )
     if sampling_seed is not None:
         command.extend(["--gym-sampling-seed", str(sampling_seed)])
     if unbrowser_url is not None:
@@ -456,12 +472,47 @@ def _run_pi(
                     semantic_capability,
                 ]
             )
-    command.extend(
-        [
-            "--append-system-prompt",
-            policy.system_prompt,
-            prompt,
-        ]
+    if policy.system_prompt:
+        command.extend(["--append-system-prompt", policy.system_prompt])
+    command.append(prompt)
+    return command
+
+
+def _run_pi(
+    project_root: Path,
+    config: RemoteConfig,
+    workspace: str,
+    prompt: str,
+    policy: PolicySpec,
+    pi_executable: str,
+    model_switch_extension: Path | None,
+    provider: str = "ubuntu-gemma",
+    model: str = "gemma-4-26b-a4b",
+    thinking: str = "off",
+    unbrowser_url: str | None = None,
+    unbrowser_binary: str = "/usr/local/bin/unbrowser",
+    unbrowser_interactive: bool = False,
+    confine_unbrowser: bool = False,
+    sampling_seed: int | None = None,
+    api_key: str | None = None,
+) -> subprocess.CompletedProcess[str]:
+    command = _build_pi_command(
+        project_root,
+        config,
+        workspace,
+        prompt,
+        policy,
+        pi_executable,
+        model_switch_extension,
+        provider,
+        model,
+        thinking,
+        unbrowser_url,
+        unbrowser_binary,
+        unbrowser_interactive,
+        confine_unbrowser,
+        sampling_seed,
+        api_key,
     )
     return subprocess.run(
         command,
@@ -490,6 +541,7 @@ def _run_pi_checked(
     unbrowser_interactive: bool = False,
     confine_unbrowser: bool = False,
     sampling_seed: int | None = None,
+    api_key: str | None = None,
 ) -> subprocess.CompletedProcess[str]:
     """Run Pi, converting a wall-clock timeout into a failed run.
 
@@ -513,6 +565,7 @@ def _run_pi_checked(
             unbrowser_interactive,
             confine_unbrowser,
             sampling_seed,
+            api_key,
         )
     except subprocess.TimeoutExpired as error:
 
@@ -544,7 +597,23 @@ def _parse_sampling_receipt(stderr: str) -> dict[str, Any] | None:
     return None
 
 
-def _attempt_event_summary(config: RemoteConfig, attempt_id: str) -> dict[str, Any] | None:
+def _parse_budget_receipt(stderr: str) -> dict[str, Any] | None:
+    for line in reversed(stderr.splitlines()):
+        if not line.startswith(_BUDGET_RECEIPT_PREFIX):
+            continue
+        try:
+            value = json.loads(line[len(_BUDGET_RECEIPT_PREFIX) :])
+        except json.JSONDecodeError:
+            return None
+        return value if isinstance(value, dict) else None
+    return None
+
+
+def _attempt_event_summary(
+    config: RemoteConfig,
+    attempt_id: str,
+    budget_receipt: Mapping[str, Any] | None = None,
+) -> dict[str, Any] | None:
     """Best-effort normalized summary from the recorded Pi events (raw JSONL).
 
     ``record-events`` persists the raw JSONL at
@@ -553,8 +622,21 @@ def _attempt_event_summary(config: RemoteConfig, attempt_id: str) -> dict[str, A
     Returns ``None`` when no events were recorded or the file is unreachable.
     """
     events_path = f"{config.run_root}/attempts/{attempt_id}/pi-events.jsonl"
+    arguments = ["normalize-events", events_path]
+    if budget_receipt is not None:
+        arguments.extend(
+            [
+                "--budget-receipt-json",
+                json.dumps(
+                    dict(budget_receipt),
+                    sort_keys=True,
+                    ensure_ascii=False,
+                    separators=(",", ":"),
+                ),
+            ]
+        )
     try:
-        return remote_json(config, ["normalize-events", events_path])
+        return remote_json(config, arguments)
     except RuntimeError:
         return None
 
@@ -581,6 +663,11 @@ def _task_json(config: RemoteConfig, args: argparse.Namespace) -> dict[str, Any]
     if args.family == "unbrowser_fixture":
         fixture_template = getattr(args, "fixture_template", "single_page_extraction")
         arguments.extend(["--fixture-template", fixture_template])
+        generator_version = getattr(
+            args, "fixture_generator_version", UNBROWSER_FIXTURE_GENERATOR_VERSION
+        )
+        if generator_version != UNBROWSER_FIXTURE_GENERATOR_VERSION:
+            arguments.extend(["--fixture-generator-version", generator_version])
     task_role = getattr(args, "task_role", None)
     if args.family in {"unbrowser_fixture", "routing_fixture"} and task_role is not None:
         arguments.extend(["--task-role", str(task_role)])
@@ -630,6 +717,7 @@ def _run_attempt(
     with_usage: bool,
     registry_hash: str | None = None,
     require_complete_event_summary: bool = False,
+    before_model_admission: Callable[[], None] | None = None,
 ) -> dict[str, Any]:
     """Prepare a fresh attempt, run the policy in Pi, record events, verify."""
     attempt_started = time.monotonic()
@@ -669,6 +757,16 @@ def _run_attempt(
     pilot_panel_id = getattr(args, "pilot_panel_id", None)
     if pilot_panel_id is not None:
         prepare_arguments.extend(["--pilot-panel-id", str(pilot_panel_id)])
+    expected_task_commitment_hash = getattr(
+        args, "expected_task_commitment_hash", None
+    )
+    if expected_task_commitment_hash is not None:
+        prepare_arguments.extend(
+            [
+                "--expected-task-commitment-hash",
+                str(expected_task_commitment_hash),
+            ]
+        )
     try:
         attempt = remote_json(config, prepare_arguments)
     except (OSError, RuntimeError, subprocess.TimeoutExpired) as error:
@@ -690,6 +788,8 @@ def _run_attempt(
         raise ValueError(
             f"model switch extension does not exist: {switch_extension}"
         )
+    if before_model_admission is not None:
+        before_model_admission()
     try:
         completed = _run_pi_checked(
             project_root,
@@ -712,6 +812,7 @@ def _run_attempt(
                 task.get("family") in {"unbrowser_fixture", "routing_fixture"}
             ),
             sampling_seed=sampling_seed,
+            api_key=getattr(args, "api_key", None),
         )
     except (OSError, RuntimeError) as error:
         raise AttemptExecutionError(
@@ -722,12 +823,32 @@ def _run_attempt(
             attempt_id=attempt_id,
         ) from error
     pi_seconds = time.monotonic() - phase_started
+    budget_receipt = _parse_budget_receipt(completed.stderr)
 
     phase_started = time.monotonic()
+    record_arguments = [
+        "record-events",
+        "--root",
+        config.run_root,
+        "--attempt-id",
+        attempt_id,
+    ]
+    if budget_receipt is not None:
+        record_arguments.extend(
+            [
+                "--budget-receipt-json",
+                json.dumps(
+                    budget_receipt,
+                    sort_keys=True,
+                    ensure_ascii=False,
+                    separators=(",", ":"),
+                ),
+            ]
+        )
     try:
         remote_json(
             config,
-            ["record-events", "--root", config.run_root, "--attempt-id", attempt_id],
+            record_arguments,
             input_text=completed.stdout,
         )
     except (OSError, RuntimeError, subprocess.TimeoutExpired) as error:
@@ -778,7 +899,7 @@ def _run_attempt(
     usage_seconds = 0.0
     if with_usage:
         phase_started = time.monotonic()
-        event_summary = _attempt_event_summary(config, attempt_id)
+        event_summary = _attempt_event_summary(config, attempt_id, budget_receipt)
         usage_seconds = time.monotonic() - phase_started
         if require_complete_event_summary and not isinstance(event_summary, dict):
             raise AttemptExecutionError(
@@ -803,6 +924,7 @@ def _run_attempt(
                 )
                 tool_trace.append(
                     {
+                        "tool_call_id": execution.get("tool_call_id"),
                         "tool_name": execution.get("tool_name"),
                         "is_error": execution.get("is_error", False),
                         "budget_rejected": execution.get(
@@ -818,7 +940,19 @@ def _run_attempt(
                     }
                 )
             result["trajectory"] = {
+                "normalizer_schema_version": event_summary.get("schema_version"),
+                "provider_turn_semantics": event_summary.get(
+                    "provider_turn_semantics"
+                ),
+                "budget_receipt": event_summary.get("budget_receipt"),
+                "assistant_message_count": event_summary.get(
+                    "assistant_message_count"
+                ),
                 "provider_turn_count": event_summary.get("provider_turn_count"),
+                "provider_turns": event_summary.get("provider_turns"),
+                "synthetic_assistant_message_count": event_summary.get(
+                    "synthetic_assistant_message_count"
+                ),
                 "tool_call_count": event_summary.get("tool_call_count"),
                 "tool_limit_rejection_count": event_summary.get(
                     "tool_limit_rejection_count"
@@ -1078,6 +1212,14 @@ def run_registered_treatments(
             raise ValueError(f"unknown treatment reference: {reference!r}") from error
         if treatment.bundle_id in selected:
             raise ValueError(f"duplicate treatment selection: {reference!r}")
+        if (
+            treatment.generator_metadata.get("execution_path")
+            == RESTRICTED_BASELINE_EXECUTION_PATH
+        ):
+            raise ValueError(
+                "the empty-overlay baseline treatment requires its dedicated "
+                "hash-authorized runner"
+            )
         selected[treatment.bundle_id] = policy_spec_from_treatment(treatment)
     has_unbrowser = {
         reference: "unbrowser" in policy.allowed_tools
@@ -1228,6 +1370,12 @@ def build_parser() -> argparse.ArgumentParser:
         "--task-role",
         default=None,
         help="frozen task role such as T_canary (unbrowser_fixture and routing_fixture only)",
+    )
+    parser.add_argument(
+        "--fixture-generator-version",
+        choices=_FIXTURE_GENERATOR_VERSIONS,
+        default=UNBROWSER_FIXTURE_GENERATOR_VERSION,
+        help="task generator version (only used when --family is unbrowser_fixture)",
     )
     parser.add_argument("--attempt-id")
     parser.add_argument(

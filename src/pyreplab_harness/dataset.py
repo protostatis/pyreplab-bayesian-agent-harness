@@ -13,9 +13,11 @@ Each row carries the task identity fields (``task_id``, ``family``,
 (``attempt_id``, ``policy_id``, ``policy_version``), a whole-task group split,
 the verified outcome (``verified_success``, ``failure_code``, verifier ids),
 a coarse ``termination_class``, ``output_token_cost`` from ``usage.output``,
-post-action cost counters from the normalized Pi events (``usage``,
-``assistant_message_count``, ``provider_turn_count``, ``tool_call_count``,
-``tool_limit_rejection_count``, ``length_stop_count``, ``final_text_length``)
+post-action cost counters from the normalized Pi events (normalizer schema and
+provider-turn semantics, ``usage``, ``assistant_message_count``,
+``provider_turn_count``, ``synthetic_assistant_message_count``,
+``tool_call_count``, ``tool_limit_rejection_count``, ``length_stop_count``,
+``final_text_length``)
 and an explicit nested ``model_input`` that contains *only* predecision
 information.
 
@@ -480,14 +482,30 @@ def _parse_normalized_events(path: Path) -> dict[str, Any]:
     provider_turn_count = _nonnegative_int(
         "provider_turn_count", assistant_message_count
     )
+    schema_version = raw.get("schema_version", "pi-events-normalized-v1")
+    provider_turn_semantics = raw.get(
+        "provider_turn_semantics", "all-assistant-messages-v1"
+    )
+    _require(schema_version, str, "normalized events field 'schema_version'", path)
+    _require(
+        provider_turn_semantics,
+        str,
+        "normalized events field 'provider_turn_semantics'",
+        path,
+    )
     tool_executions = raw.get("tool_executions", [])
     _require(tool_executions, list, "normalized events field 'tool_executions'", path)
     final_text = raw.get("final_text", "")
     _require(final_text, str, "normalized events field 'final_text'", path)
     return {
         "usage": parsed_usage,
+        "normalizer_schema_version": schema_version,
+        "provider_turn_semantics": provider_turn_semantics,
         "assistant_message_count": assistant_message_count,
         "provider_turn_count": provider_turn_count,
+        "synthetic_assistant_message_count": _nonnegative_int(
+            "synthetic_assistant_message_count"
+        ),
         "tool_call_count": len(tool_executions),
         "tool_limit_rejection_count": _nonnegative_int(
             "tool_limit_rejection_count"
@@ -547,8 +565,13 @@ def _build_row(
         "output_token_cost": output_cost,
         "termination_class": termination_class,
         "usage": dict(normalized["usage"]),
+        "normalizer_schema_version": normalized["normalizer_schema_version"],
+        "provider_turn_semantics": normalized["provider_turn_semantics"],
         "assistant_message_count": normalized["assistant_message_count"],
         "provider_turn_count": normalized["provider_turn_count"],
+        "synthetic_assistant_message_count": normalized[
+            "synthetic_assistant_message_count"
+        ],
         "tool_call_count": normalized["tool_call_count"],
         "tool_limit_rejection_count": normalized["tool_limit_rejection_count"],
         "length_stop_count": normalized["length_stop_count"],

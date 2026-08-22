@@ -281,6 +281,62 @@ class RegistryTest(unittest.TestCase):
             )
             self.assertEqual(artifact_task.family, "artifact")
 
+    def test_generate_task_forwards_outcome_only_fixture_version(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            task = generate_task(
+                "unbrowser_fixture",
+                directory,
+                1,
+                "easy",
+                fixture_template="single_page_extraction",
+                fixture_generator_version="unbrowser-fixture-v3",
+            )
+            self.assertEqual(task.generator_version, "unbrowser-fixture-v3")
+            self.assertEqual(
+                task.public_metadata["prompt_profile"], "outcome_only_v1"
+            )
+
+    def test_cli_generate_accepts_outcome_only_fixture_version(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            buffer = io.StringIO()
+            with redirect_stdout(buffer):
+                code = cli_main(
+                    [
+                        "generate",
+                        "--family",
+                        "unbrowser_fixture",
+                        "--root",
+                        directory,
+                        "--seed",
+                        "7",
+                        "--difficulty",
+                        "easy",
+                        "--fixture-generator-version",
+                        "unbrowser-fixture-v3",
+                    ]
+                )
+            self.assertEqual(code, 0)
+            task = json.loads(buffer.getvalue())
+            self.assertEqual(task["generator_version"], "unbrowser-fixture-v3")
+
+            buffer = io.StringIO()
+            with redirect_stdout(buffer):
+                code = cli_main(
+                    [
+                        "fixture-task-commitment",
+                        "--root",
+                        directory,
+                        "--task-id",
+                        task["id"],
+                    ]
+                )
+            self.assertEqual(code, 0)
+            commitment = json.loads(buffer.getvalue())
+            self.assertEqual(commitment["task"]["id"], task["id"])
+            self.assertEqual(len(commitment["workspace_sha256"]), 64)
+            self.assertEqual(len(commitment["oracle_sha256"]), 64)
+            self.assertEqual(len(commitment["commitment_hash"]), 64)
+
     def test_task_role_is_fixture_only(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             task = generate_task(

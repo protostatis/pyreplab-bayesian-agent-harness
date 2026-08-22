@@ -88,6 +88,9 @@ class AttemptRecord:
     sampling_seed: int | None = None
     pilot_manifest_hash: str | None = None
     pilot_panel_id: str | None = None
+    task_commitment_hash: str | None = None
+    oracle_snapshot_ref: str | None = None
+    oracle_snapshot_sha256: str | None = None
     status: str = "prepared"
     pi_events_ref: str | None = None
     normalized_events_ref: str | None = None

@@ -77,9 +77,14 @@ class TreatmentSpecValidationTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             self._make_spec(version="   ")
 
-    def test_empty_system_prompt_raises(self) -> None:
+    def test_exact_empty_system_prompt_is_no_overlay_treatment(self) -> None:
+        spec = self._make_spec(system_prompt="")
+        self.assertEqual(spec.system_prompt, "")
+        self.assertEqual(len(spec.bundle_hash), 64)
+
+    def test_whitespace_only_system_prompt_raises(self) -> None:
         with self.assertRaises(ValueError):
-            self._make_spec(system_prompt="")
+            self._make_spec(system_prompt="   \n")
 
     def test_empty_allowed_tools_raises(self) -> None:
         with self.assertRaises(ValueError):
@@ -153,6 +158,18 @@ class TreatmentSpecValidationTest(unittest.TestCase):
 
 
 class DeterministicHashTest(unittest.TestCase):
+    def test_existing_nonempty_payload_hash_is_stable(self) -> None:
+        spec = TreatmentSpec(
+            id="hash-regression", version="1", system_prompt="Plan and verify.",
+            allowed_tools=("bash",), max_output_tokens=1024,
+            tool_call_limit=4, command_timeout_seconds=30,
+            wall_time_limit_seconds=180,
+        )
+        self.assertEqual(
+            spec.bundle_hash,
+            "fc61ae8cae10711b122056a97ea3140fe6ee2e815bd950145abe9d552fd29447",
+        )
+
     def test_same_fields_produce_same_hash(self) -> None:
         s1 = TreatmentSpec(
             id="det", version="1", system_prompt="p",
@@ -233,6 +250,17 @@ class RoundtripTest(unittest.TestCase):
         self.assertEqual(self.spec.bundle_id, restored.bundle_id)
         self.assertEqual(self.spec.system_prompt, restored.system_prompt)
         self.assertEqual(self.spec.allowed_tools, restored.allowed_tools)
+
+    def test_empty_overlay_roundtrip_preserves_hash_and_prompt(self) -> None:
+        spec = TreatmentSpec(
+            id="empty-overlay", version="1", system_prompt="",
+            allowed_tools=("bash",), max_output_tokens=500,
+            tool_call_limit=3, command_timeout_seconds=15,
+            wall_time_limit_seconds=120,
+        )
+        restored = TreatmentSpec.from_dict(spec.to_dict())
+        self.assertEqual(restored.system_prompt, "")
+        self.assertEqual(restored.bundle_hash, spec.bundle_hash)
 
     def test_from_dict_with_good_hash_passes(self) -> None:
         d = self.spec.to_dict()
@@ -357,6 +385,16 @@ class ModelInputDescriptorTest(unittest.TestCase):
         self.assertIn("Fix the bug.", desc["text"])
         self.assertIn("Think carefully.", desc["text"])
         self.assertTrue(desc["text"].startswith("Fix the bug."))
+
+    def test_empty_overlay_descriptor_contains_only_task_text(self) -> None:
+        spec = TreatmentSpec(
+            id="empty-overlay", version="1", system_prompt="",
+            allowed_tools=("bash",), max_output_tokens=2048,
+            tool_call_limit=8, command_timeout_seconds=45,
+            wall_time_limit_seconds=360,
+        )
+        desc = treatment_model_input_descriptor(spec, task_text="Fix the bug.")
+        self.assertEqual(desc["text"], "Fix the bug.")
 
     def test_descriptor_numeric_fields_match_spec(self) -> None:
         desc = treatment_model_input_descriptor(self.spec)

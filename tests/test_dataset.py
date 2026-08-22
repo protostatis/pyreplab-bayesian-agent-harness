@@ -23,7 +23,11 @@ from pyreplab_harness.dataset import (
     write_dataset,
 )
 from pyreplab_harness.calibration import audit_context_leakage
-from pyreplab_harness.events import normalize_pi_events
+from pyreplab_harness.events import (
+    NORMALIZED_EVENT_SCHEMA_VERSION,
+    PROVIDER_TURN_SEMANTICS,
+    normalize_pi_events,
+)
 from pyreplab_harness.gym_registry import generate_task, verify_attempt
 from pyreplab_harness.io_utils import read_json, write_json
 from pyreplab_harness.meta_grammar import (
@@ -142,8 +146,15 @@ class DatasetJoinTest(unittest.TestCase):
                     "total_tokens": 280,
                 },
             )
+            self.assertEqual(
+                row["normalizer_schema_version"], NORMALIZED_EVENT_SCHEMA_VERSION
+            )
+            self.assertEqual(
+                row["provider_turn_semantics"], PROVIDER_TURN_SEMANTICS
+            )
             self.assertEqual(row["assistant_message_count"], 2)
             self.assertEqual(row["provider_turn_count"], 2)
+            self.assertEqual(row["synthetic_assistant_message_count"], 0)
             self.assertEqual(row["tool_call_count"], 3)
             self.assertEqual(row["tool_limit_rejection_count"], 0)
             self.assertEqual(row["length_stop_count"], 0)
@@ -1182,7 +1193,7 @@ class GrammarCnpExportTest(unittest.TestCase):
             task = generate_task("artifact", directory, 79, "easy")
             record = prepare_attempt(directory, task.id, "a-neg", "direct")
             events = _synthetic_events(assistant_count=1, tool_calls=0,
-                                       input_per=10, output_per=-5)
+                                       input_per=10, output_per=5)
             raw = "\n".join(json.dumps(e) for e in events)
             # Manually overwrite the normalized events file with negative output.
             norm_path = Path(directory) / "attempts" / "a-neg" / "pi-events.normalized.json"
