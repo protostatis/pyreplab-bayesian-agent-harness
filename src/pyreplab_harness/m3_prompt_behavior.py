@@ -165,8 +165,16 @@ from typing import Any, Iterable, Mapping
 
 RESTRICTED_EVIDENCE_SCHEMA_VERSION = "pyreplab-behavior-restricted-evidence-v1"
 RESULT_WRITE_RECEIPT_SCHEMA_VERSION = "pyreplab-result-write-receipt-v1"
-BEHAVIOR_RECEIPT_SCHEMA_VERSION = "pyreplab-behavior-receipt-v1"
+# v2: input semantics changed — result_submission now derives from the
+# mutation-based detector (worker-side content snapshot), not command text.
+BEHAVIOR_RECEIPT_SCHEMA_VERSION = "pyreplab-behavior-receipt-v2"
 CLASSIFIER_SOURCE = "pyreplab_harness.m3_prompt_behavior"
+
+# Detector identity is versioned SEPARATELY from the classifier (advisory
+# ruling 2026-08-23): the detector supplies the trustworthy
+# ``result_submission`` input; the classifier logic is unchanged.
+DETECTOR_VERSION = "result-submission-mutation-v2"
+DETECTOR_SOURCE_RELPATH = "pi_extensions/gym-tools.ts"
 
 RESULT_JSON_PATH = "/workspace/result.json"
 # The result-write receipt is scoped to the M3 prompt-only (E/C/R) pilot over the
@@ -270,6 +278,8 @@ _BEHAVIOR_RECEIPT_KEYS = frozenset(
         "schema_version",
         "classifier_source",
         "classifier_source_sha256",
+        "detector_version",
+        "detector_source_sha256",
         "itt_inclusion",
         "provider_turn_count",
         "completion",
@@ -480,6 +490,20 @@ def module_source_sha256() -> str:
     path = Path(__file__).resolve()
     if not path.is_file() and path.suffix == ".pyc":
         path = path.with_suffix(".py")
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def detector_source_sha256() -> str | None:
+    """SHA-256 of the detector source (gym-tools.ts), or None when absent.
+
+    The detector lives in the pi-extension tree outside this package; when the
+    file cannot be located the stamp is ``None`` and validation skips the
+    hash-equality check while still requiring the version string.
+    """
+    repo_root = Path(__file__).resolve().parents[2]
+    path = repo_root / DETECTOR_SOURCE_RELPATH
+    if not path.is_file():
+        return None
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
@@ -1248,6 +1272,8 @@ def analyze_attempt(
         "schema_version": BEHAVIOR_RECEIPT_SCHEMA_VERSION,
         "classifier_source": CLASSIFIER_SOURCE,
         "classifier_source_sha256": module_source_sha256(),
+        "detector_version": DETECTOR_VERSION,
+        "detector_source_sha256": detector_source_sha256(),
         "itt_inclusion": "unconditional",
         "provider_turn_count": provider_turn_count,
         "completion": {
@@ -1290,6 +1316,14 @@ def validate_behavior_receipt(receipt: Any) -> list[str]:
         violations.append("behavior receipt: classifier_source mismatch")
     if receipt.get("classifier_source_sha256") != module_source_sha256():
         violations.append("behavior receipt: classifier_source_sha256 mismatch")
+    if receipt.get("detector_version") != DETECTOR_VERSION:
+        violations.append("behavior receipt: detector_version mismatch")
+    expected_detector_hash = detector_source_sha256()
+    if (
+        expected_detector_hash is not None
+        and receipt.get("detector_source_sha256") != expected_detector_hash
+    ):
+        violations.append("behavior receipt: detector_source_sha256 mismatch")
     if receipt.get("itt_inclusion") != "unconditional":
         violations.append("behavior receipt: itt_inclusion must be 'unconditional'")
 

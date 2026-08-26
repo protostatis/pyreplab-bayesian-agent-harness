@@ -742,6 +742,20 @@ export default function (pi: ExtensionAPI) {
         if (result.timed_out) prefix += `[Command timed out after ${clampedTimeout}s]\n`;
         if (result.truncated) prefix += "[Output truncated]\n";
 
+        // v2 detector (mutation-based): the executor snapshots the canonical
+        // /workspace/result.json before/after the command; a submission is an
+        // exit-0 command whose execution changed the file's existence or
+        // content. Never derived from command text.
+        const resultFile = (
+          result as { result_file?: { mutated?: boolean; before?: { sha256?: string | null }; after?: { sha256?: string | null; exists?: boolean } } }
+        ).result_file;
+        // A submission requires the canonical target to EXIST after the call:
+        // a deletion (or any disappearance) is a mutation for audit purposes
+        // but can never be a valid submission.
+        const mutated = resultFile?.mutated === true;
+        const submission =
+          result.exit_code === 0 && mutated && resultFile?.after?.exists === true;
+
         return {
           content: [{
             type: "text",
@@ -749,7 +763,15 @@ export default function (pi: ExtensionAPI) {
           }],
           details: {
             exit_code: result.exit_code,
-            result_submission: result.exit_code === 0 && params.command.includes("result.json"),
+            result_submission: submission,
+            ...(submission
+              ? {
+                  result_write: {
+                    prev_sha256: resultFile?.before?.sha256 ?? null,
+                    new_sha256: resultFile?.after?.sha256 ?? null,
+                  },
+                }
+              : {}),
           },
         };
       } catch (e) {

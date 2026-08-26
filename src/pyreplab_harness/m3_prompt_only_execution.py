@@ -79,12 +79,14 @@ from .m3_pilot import (
 from .m3_prompt_behavior import (
     BEHAVIOR_RECEIPT_SCHEMA_VERSION,
     CLASSIFIER_SOURCE,
+    DETECTOR_VERSION,
     RESULT_JSON_PATH,
     RESULT_WRITE_PILOT_SCOPE,
     RESULT_WRITE_RECEIPT_SCHEMA_VERSION,
     RestrictedEvidenceError,
     analyze_attempt,
     build_restricted_evidence,
+    detector_source_sha256,
     module_source_sha256,
 )
 from .m3_prompt_only_pilot import (
@@ -5035,6 +5037,8 @@ def _unknown_behavior_receipt(provider_turn_count: Any = None) -> dict[str, Any]
         "schema_version": BEHAVIOR_RECEIPT_SCHEMA_VERSION,
         "classifier_source": CLASSIFIER_SOURCE,
         "classifier_source_sha256": module_source_sha256(),
+        "detector_version": DETECTOR_VERSION,
+        "detector_source_sha256": detector_source_sha256(),
         "itt_inclusion": "unconditional",
         "provider_turn_count": (
             provider_turn_count

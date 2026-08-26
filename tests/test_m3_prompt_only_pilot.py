@@ -611,7 +611,33 @@ class ScheduleBalanceTest(unittest.TestCase):
         # Every v11 task/sampling/schedule/simulator seed must be absent from
         # all current JSON/JSONL run artifacts before freeze (v8/v9/v10 seeds
         # ARE present, in the consumed v8/v9/v10 artifacts).
-        collisions = scan_collisions(_manifest(), PROJECT_ROOT / ".runs")
+        #
+        # Excluded: the v11 generation's OWN closed-run artifacts. After the
+        # interrupted-terminal closure (2026-08-23), the immutable 43-cell
+        # ledger and its bound artifacts legitimately contain v11 identifiers
+        # and seeds — they ARE the v11 audit record, not a leakage vector.
+        # Only exact file paths are excluded (never directories/wildcards),
+        # matching _normalized_exclude_paths policy. The closed generation's
+        # satellite artifacts (proxy-N.jsonl, .active/.launch/.claim markers)
+        # are enumerated as exact paths at setup time.
+        runs_dir = PROJECT_ROOT / ".runs"
+        exclude = sorted(
+            str(p) for p in runs_dir.glob("m3-prompt-only-pilot-20260816-v11*")
+            if p.is_file()
+        )
+        # Analysis-layer raw-event cache: verbatim copies of the closed
+        # generation's pi-events.jsonl fetched for post-hoc label recovery.
+        exclude += sorted(
+            str(p) for p in (runs_dir / "raw_cache").glob("*.jsonl")
+        )
+        # Derived analysis artifacts of the closed generation (feature table
+        # built from the 43-cell ledger).
+        v11_features = runs_dir / "v11-cell-features.json"
+        if v11_features.is_file():
+            exclude.append(str(v11_features))
+        collisions = scan_collisions(
+            _manifest(), runs_dir, exclude_paths=exclude
+        )
         self.assertEqual(collisions, [])
         # v10 seeds must not appear in the v11 schedule (tasks/panels/cells/
         # schedule/simulator seeds). The amendment's provenance fields

@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import sys
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, TextIO
 
 from .fixture_server import FixtureServer
@@ -40,6 +42,48 @@ def stop_fixture_server() -> None:
 class WorkerConfig:
     max_timeout: int = 30
     semantic_capability: str | None = None
+
+
+RESULT_FILE_BASENAME = "result.json"
+
+
+def _snapshot_result_file(workspace: Any) -> dict[str, Any]:
+    """Authoritative pre/post state of the canonical result target.
+
+    Content-addressed: a mutation is an existence change OR a sha256 change.
+    This is mechanism-agnostic (redirect, append, tee, python write, cp/mv,
+    heredoc, symlink target) and deduplicates byte-identical rewrites by
+    design, so the detector never parses command strings.
+    """
+    target = Path(workspace) / RESULT_FILE_BASENAME
+    try:
+        stat = target.stat()
+    except (FileNotFoundError, NotADirectoryError, PermissionError):
+        return {"exists": False}
+    digest = hashlib.sha256()
+    with target.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(65536), b""):
+            digest.update(chunk)
+    return {
+        "exists": True,
+        "sha256": digest.hexdigest(),
+        "size": int(stat.st_size),
+        "mtime_ns": int(stat.st_mtime_ns),
+    }
+
+
+def _result_mutated(before: dict[str, Any], after: dict[str, Any]) -> bool:
+    """Finalized-mutation predicate: existence change or content change only.
+
+    ``mtime`` is deliberately excluded from the predicate (a bare ``touch``
+    is not a submission) while byte-identical rewrites deduplicate to
+    ``False``, matching the single-submission receipt semantics.
+    """
+    if bool(before.get("exists")) != bool(after.get("exists")):
+        return True
+    if after.get("exists") and before.get("sha256") != after.get("sha256"):
+        return True
+    return False
 
 
 def handle_request(
@@ -98,8 +142,18 @@ def handle_request(
     if isinstance(requested_timeout, bool) or not isinstance(requested_timeout, (int, float)):
         raise ValueError("timeout must be numeric")
     timeout = max(1, min(int(requested_timeout), config.max_timeout))
+    workspace = getattr(sandbox, "workspace", None)
+    before = _snapshot_result_file(workspace) if workspace is not None else None
     result = sandbox.execute(command, timeout)
-    return {"id": request_id, "ok": True, "result": result.to_dict()}, False
+    payload = result.to_dict()
+    if before is not None:
+        after = _snapshot_result_file(workspace)
+        payload["result_file"] = {
+            "before": before,
+            "after": after,
+            "mutated": _result_mutated(before, after),
+        }
+    return {"id": request_id, "ok": True, "result": payload}, False
 
 
 def serve(
