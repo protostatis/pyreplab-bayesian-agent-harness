@@ -1,0 +1,20 @@
+[Unit]
+Description=Pyreplab M3 Prompt-Only Pilot (%i)
+Documentation=https://github.com/protostatis/pyreplab-bayesian-agent-harness
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=__PROJECT_ROOT__
+ExecStart=/usr/bin/caffeinate -ism __VENV_PYTHON__ -m pyreplab_harness.m3_prompt_only_execution run --authorization-hash __AUTH_HASH__ --authorization __AUTHORIZATION_JSON__ --manifest __MANIFEST_JSON__ --registry __REGISTRY_JSON__ --local-preflight __LOCAL_PREFLIGHT_JSON__ --remote-preflight __REMOTE_PREFLIGHT_JSON__ --result __RESULT_JSONL__ --host __HOST__ --remote-project __REMOTE_PROJECT__ --remote-run-root __REMOTE_RUN_ROOT__ --remote-python python3 --pi pi --provider __PROVIDER__ --model __MODEL__ --thinking off --unbrowser-binary __UNBROWSER_BINARY__ --model-artifact __MODEL_ARTIFACT__ --llama-server-binary __LLAMA_SERVER_BINARY__ --endpoint-probe-receipt __ENDPOINT_PROBE_RECEIPT_JSON__ --endpoint-probe-authorization __ENDPOINT_PROBE_AUTHORIZATION_JSON__ --expected-endpoint-probe-authorization-hash __EXPECTED_PROBE_AUTH_HASH__
+Restart=on-failure
+RestartSec=10
+StandardOutput=append:__LOG_PATH__
+StandardError=append:__LOG_PATH__
+
+# Hardening: the OFF server lifecycle is managed by the controller; do not
+# add ExecStop that kills the remote run-root.
+
+[Install]
+WantedBy=default.target

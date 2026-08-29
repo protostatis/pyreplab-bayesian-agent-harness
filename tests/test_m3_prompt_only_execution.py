@@ -3558,7 +3558,7 @@ class RunnerGateTest(unittest.TestCase):
             "must be object\n"
             "File: /tmp/conf/models.json\n"
             "Authorization: Bearer sk-secret-token-1234567890abcdef\n"
-            "--api-key pyreplab-prompt-pilot-dummy-key-v11\n"
+            "--api-key pyreplab-prompt-pilot-dummy-key-v14\n"
             "ANSI\x1b[31mred\x1b[0m \x00binary\x07\n"
         )
 
@@ -5173,13 +5173,13 @@ class WallBudgetV9Test(unittest.TestCase):
                 ledger_sha256="a" * 64,
             )
         # Generation-bound identities are all v11 now.
-        self.assertEqual(EXECUTION_GENERATION, "v11")
-        self.assertEqual(REQUEST_SCHEMA_VERSION, "m3-prompt-only-authorization-request-v11")
-        self.assertEqual(AUTHORIZATION_SCHEMA_VERSION, "m3-prompt-only-execution-authorization-v11")
-        self.assertEqual(COMPLETION_RECEIPT_SCHEMA_VERSION, "m3-prompt-only-completion-receipt-v11")
-        self.assertEqual(REMOTE_PREFLIGHT_SCHEMA_VERSION, "m3-prompt-only-remote-preflight-v11")
-        self.assertEqual(SUBSTRATE_EVIDENCE_SCHEMA_VERSION, "m3-prompt-only-substrate-evidence-v11")
-        self.assertEqual(SCREEN_ID, "m3-prompt-only-pilot-20260816-v11")
+        self.assertEqual(EXECUTION_GENERATION, "v14")
+        self.assertEqual(REQUEST_SCHEMA_VERSION, "m3-prompt-only-authorization-request-v14")
+        self.assertEqual(AUTHORIZATION_SCHEMA_VERSION, "m3-prompt-only-execution-authorization-v14")
+        self.assertEqual(COMPLETION_RECEIPT_SCHEMA_VERSION, "m3-prompt-only-completion-receipt-v14")
+        self.assertEqual(REMOTE_PREFLIGHT_SCHEMA_VERSION, "m3-prompt-only-remote-preflight-v14")
+        self.assertEqual(SUBSTRATE_EVIDENCE_SCHEMA_VERSION, "m3-prompt-only-substrate-evidence-v14")
+        self.assertEqual(SCREEN_ID, "m3-prompt-only-pilot-20260816-v14")
 
 
 class ReadinessTest(unittest.TestCase):
@@ -7817,7 +7817,7 @@ class OffServerBindingPolicyTest(unittest.TestCase):
         self.assertEqual(slot_action_directory_path(), SLOT_ACTION_DIRECTORY)
         self.assertEqual(
             SLOT_ACTION_DIRECTORY,
-            "/tmp/m3-prompt-only-pilot-20260816-v11-erase-only-slot-actions",
+            "/tmp/m3-prompt-only-pilot-20260816-v14-erase-only-slot-actions",
         )
 
     def test_required_help_flags_include_slot_save_path(self) -> None:

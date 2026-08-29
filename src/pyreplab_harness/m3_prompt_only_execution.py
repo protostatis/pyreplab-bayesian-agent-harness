@@ -148,15 +148,15 @@ from .unbrowser_fixture_gym import (
 # Frozen schemas and constants
 # ---------------------------------------------------------------------------
 
-EXECUTION_GENERATION = "v11"
-REQUEST_SCHEMA_VERSION = "m3-prompt-only-authorization-request-v11"
-AUTHORIZATION_SCHEMA_VERSION = "m3-prompt-only-execution-authorization-v11"
+EXECUTION_GENERATION = "v14"
+REQUEST_SCHEMA_VERSION = "m3-prompt-only-authorization-request-v14"
+AUTHORIZATION_SCHEMA_VERSION = "m3-prompt-only-execution-authorization-v14"
 CELL_RESULT_SCHEMA_VERSION = "m3-prompt-only-cell-result-v1"
-COMPLETION_RECEIPT_SCHEMA_VERSION = "m3-prompt-only-completion-receipt-v11"
+COMPLETION_RECEIPT_SCHEMA_VERSION = "m3-prompt-only-completion-receipt-v14"
 ANALYSIS_SCHEMA_VERSION = "m3-prompt-only-analysis-v1"
 CLAIM_SCHEMA_VERSION = "m3-prompt-only-claim-v1"
 DETACHED_LAUNCH_SCHEMA_VERSION = "m3-prompt-only-detached-launch-v1"
-REMOTE_PREFLIGHT_SCHEMA_VERSION = "m3-prompt-only-remote-preflight-v11"
+REMOTE_PREFLIGHT_SCHEMA_VERSION = "m3-prompt-only-remote-preflight-v14"
 SLOT_CLEAR_SCHEMA_VERSION = "m3-prompt-only-slot-clear-receipt-v3"
 # v10 post-mortem: the OFF server can legitimately stay busy for minutes after
 # a cell's final completion request (a 12,213-token prompt took ~305 s of
@@ -8842,7 +8842,7 @@ def build_safe_ledger(records: Sequence[Mapping[str, Any]]) -> list[dict[str, An
 # substrate receipt (evidence-bound)
 # ---------------------------------------------------------------------------
 
-SUBSTRATE_EVIDENCE_SCHEMA_VERSION = "m3-prompt-only-substrate-evidence-v11"
+SUBSTRATE_EVIDENCE_SCHEMA_VERSION = "m3-prompt-only-substrate-evidence-v14"
 
 
 def _recompute_receipt_hash(receipt: Mapping[str, Any], field: str) -> str:

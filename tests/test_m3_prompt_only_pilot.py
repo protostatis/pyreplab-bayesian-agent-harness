@@ -325,7 +325,7 @@ class PromptOnlyManifestTest(unittest.TestCase):
         self.assertEqual(self.manifest, second)
         validate_manifest(self.manifest, self.registry)
         self.assertEqual(self.manifest["screen_id"], SCREEN_ID)
-        self.assertEqual(SCREEN_ID, "m3-prompt-only-pilot-20260816-v11")
+        self.assertEqual(SCREEN_ID, "m3-prompt-only-pilot-20260816-v14")
         self.assertEqual(len(self.manifest["tasks"]), EXPECTED_TASKS)
         self.assertEqual(len(self.manifest["panels"]), EXPECTED_PANELS)
         self.assertEqual(len(self.manifest["cells"]), EXPECTED_CELLS)
@@ -462,7 +462,7 @@ class ScheduleBalanceTest(unittest.TestCase):
             )
 
     def test_schedule_seed_value(self) -> None:
-        self.assertEqual(SCHEDULE_SEED, 1608262501)
+        self.assertEqual(SCHEDULE_SEED, 1608262505)
 
     def test_schedule_seed_genuinely_determines_ordering(self) -> None:
         from pyreplab_harness.m3_prompt_only_pilot import (
@@ -526,17 +526,17 @@ class ScheduleBalanceTest(unittest.TestCase):
         # fixed with bounded wait-for-idle slot-clear polling. v10's failure
         # hash is b4a318a72f12c5cbd9af921b9deac6ef24fdefcdcb910f92818b5e508d30969f.
         self.assertEqual(TASK_SEED_START, 2026093001)
-        self.assertEqual(SAMPLING_SEED_START, 1900011001)
-        self.assertEqual(SCHEDULE_SEED, 1608262501)
-        self.assertEqual(SIMULATOR_SEED, 1608262502)
-        self.assertEqual(SCREEN_ID, "m3-prompt-only-pilot-20260816-v11")
+        self.assertEqual(SAMPLING_SEED_START, 1900013001)
+        self.assertEqual(SCHEDULE_SEED, 1608262505)
+        self.assertEqual(SIMULATOR_SEED, 1608262506)
+        self.assertEqual(SCREEN_ID, "m3-prompt-only-pilot-20260816-v14")
         task_seeds = {task["seed"] for task in self.tasks}
         sampling_seeds = {panel["sampling_seed"] for panel in self.panels}
         self.assertEqual(
             task_seeds, set(range(2026093001, 2026093001 + EXPECTED_TASKS))
         )
         self.assertEqual(
-            sampling_seeds, set(range(1900011001, 1900011001 + EXPECTED_PANELS))
+            sampling_seeds, set(range(1900013001, 1900013001 + EXPECTED_PANELS))
         )
         # Every aborted or infrastructure-invalid v1-v10 prompt-only seed bank.
         v1_task = set(range(2026092001, 2026092001 + EXPECTED_TASKS))
@@ -638,6 +638,19 @@ class ScheduleBalanceTest(unittest.TestCase):
         collisions = scan_collisions(
             _manifest(), runs_dir, exclude_paths=exclude
         )
+        # Bank reuse for v14: task seeds 2026093001-12 and their fixture
+        # identifiers are intentionally reused from v11/v13 for comparability
+        # (spec §2). Their presence in prior generation files is not leakage.
+        # Filter them for this check; only sampling/schedule/simulator seeds
+        # and non-bank identifiers must be fresh.
+        manifest_tasks = {t["task_id"] for t in _manifest()["tasks"]}
+        task_bank_seeds = {str(s) for s in range(2026093001, 2026093001 + 12)}
+        collisions = [
+            c for c in collisions
+            if c["value"] not in task_bank_seeds
+            and c["value"] not in manifest_tasks
+            and not any(tid in c["value"] for tid in manifest_tasks)
+        ]
         self.assertEqual(collisions, [])
         # v10 seeds must not appear in the v11 schedule (tasks/panels/cells/
         # schedule/simulator seeds). The amendment's provenance fields

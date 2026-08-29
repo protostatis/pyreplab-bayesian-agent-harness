@@ -80,13 +80,13 @@ from .unbrowser_fixture_gym import (
 # Schema and identity constants
 # ---------------------------------------------------------------------------
 
-MANIFEST_SCHEMA_VERSION = "m3-prompt-only-pilot-manifest-v11"
-PREFLIGHT_SCHEMA_VERSION = "m3-prompt-only-pilot-local-preflight-v11"
+MANIFEST_SCHEMA_VERSION = "m3-prompt-only-pilot-manifest-v14"
+PREFLIGHT_SCHEMA_VERSION = "m3-prompt-only-pilot-local-preflight-v14"
 COMMAND_RECEIPT_SCHEMA_VERSION = "m3-prompt-only-pilot-command-arm-receipt-v1"
 SIMULATOR_REPORT_SCHEMA_VERSION = "m3-prompt-only-pilot-simulator-report-v1"
 ANALYSIS_SCHEMA_VERSION = "m3-prompt-only-pilot-analysis-v1"
 LEDGER_SCHEMA_VERSION = "m3-prompt-only-pilot-ledger-v1"
-SUBSTRATE_RECEIPT_SCHEMA_VERSION = "m3-prompt-only-pilot-substrate-receipt-v11"
+SUBSTRATE_RECEIPT_SCHEMA_VERSION = "m3-prompt-only-pilot-substrate-receipt-v14"
 WALL_BUDGET_AMENDMENT_SCHEMA_VERSION = "m3-prompt-only-wall-budget-amendment-v1"
 SOURCE_BUNDLE_SCHEMA_VERSION = "m3-prompt-only-source-bundle-v1"
 PI_CONFORMANCE_SCHEMA_VERSION = "m3-prompt-only-pi-conformance-receipt-v1"
@@ -129,7 +129,7 @@ ARM_SEVERE_VETO_CODES = (
 )
 SEVERE_VETO_CODES = GENERATION_INVALID_VETO_CODES + ARM_SEVERE_VETO_CODES
 
-SCREEN_ID = "m3-prompt-only-pilot-20260816-v11"
+SCREEN_ID = "m3-prompt-only-pilot-20260816-v14"
 TASK_ROLE = "T_pilot"
 TASK_SPLIT = "pilot_excluded"
 TREATMENT_VERSION = "pilot-excluded-v1"
@@ -140,7 +140,7 @@ TASK_PROMPT_PROFILE = "outcome_only_v1"
 # pilot uses exactly this fixed dummy value via ``--api-key`` on the production
 # command. It is a constant that is NEVER a credential: artifacts bind only its
 # mode and SHA-256 (see :func:`dummy_api_key_binding`), never the literal.
-DUMMY_PROVIDER_API_KEY = "pyreplab-prompt-pilot-dummy-key-v11"
+DUMMY_PROVIDER_API_KEY = "pyreplab-prompt-pilot-dummy-key-v14"
 
 # Run-specific, generation-bound erase-only slot-action directory. This is an
 # explicit feature-gate exception: native KV persistence remains forbidden, and
@@ -164,12 +164,12 @@ ARM_PERMUTATIONS = (
 TASK_SEEDS_PER_CELL = 2
 ROLLOUT_REPLICAS = 2
 TASK_SEED_START = 2026093001
-SAMPLING_SEED_START = 1900011001
+SAMPLING_SEED_START = 1900013001
 # Genuinely fresh 32-bit 10-digit values that do not occur anywhere in current
 # ``.runs`` (including the aborted or infrastructure-invalid v1-v10 prompt-only
 # task/sampling/schedule/simulator seeds).
-SCHEDULE_SEED = 1608262501
-SIMULATOR_SEED = 1608262502
+SCHEDULE_SEED = 1608262505
+SIMULATOR_SEED = 1608262506
 
 EXPECTED_TASKS = len(PROMPT_TEMPLATES) * len(DIFFICULTIES) * TASK_SEEDS_PER_CELL
 EXPECTED_PANELS = EXPECTED_TASKS * ROLLOUT_REPLICAS
@@ -581,10 +581,60 @@ def _build_cells(
     return cells
 
 
+def _stratified_execution_order(
+    cells: list[dict[str, Any]], seed: int = SCHEDULE_SEED
+) -> list[dict[str, Any]]:
+    """Seeded stratified shuffle of cells for bounded-damage execution order.
+
+    Groups cells by difficulty stratum, Fisher-Yates shuffles within each
+    stratum using a stratum-mixed seed, then round-robin interleaves strata
+    (easy → medium → hard, repeat). This guarantees any early prefix (e.g.
+    first 24 cells) spans all difficulty strata, so an interruption cannot
+    amputate an entire stratum.
+
+    Deterministic and frozen in the manifest via ``build_schedule``.
+    """
+    from collections import defaultdict
+
+    groups: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for cell in cells:
+        groups[cell["difficulty"]].append(cell)
+
+    # Seeded Fisher-Yates per stratum (deterministic: no Python hash randomization)
+    diff_order = {"easy": 0x9E3779B1, "medium": 0x85EBCA77, "hard": 0xC2B2AE3D}
+    for diff in sorted(groups.keys()):
+        # Mix seed with difficulty-specific constant
+        mixed = (seed ^ diff_order.get(diff, 0x9E3779B9)) & 0xFFFFFFFF
+        state = mixed if mixed != 0 else 0x9E3779B9
+        lst = groups[diff]
+
+        def _next_u32() -> int:
+            nonlocal state
+            state ^= (state << 13) & 0xFFFFFFFF
+            state ^= state >> 17
+            state ^= (state << 5) & 0xFFFFFFFF
+            return state & 0xFFFFFFFF
+
+        for idx in range(len(lst) - 1, 0, -1):
+            pick = _next_u32() % (idx + 1)
+            lst[idx], lst[pick] = lst[pick], lst[idx]
+
+    # Round-robin interleave: easy → medium → hard
+    order = [d for d in ("easy", "medium", "hard") if d in groups]
+    max_len = max(len(v) for v in groups.values())
+    out: list[dict[str, Any]] = []
+    for slot in range(max_len):
+        for diff in order:
+            if slot < len(groups[diff]):
+                out.append(groups[diff][slot])
+    return out
+
+
 def build_schedule() -> dict[str, Any]:
     tasks = _build_tasks()
     panels = _build_panels(tasks)
     cells = _build_cells(tasks, panels)
+    cells = _stratified_execution_order(cells, SCHEDULE_SEED)
     return {"tasks": tasks, "panels": panels, "cells": cells}
 
 
@@ -3590,6 +3640,16 @@ def main(argv: list[str] | None = None) -> int:
             pi_executable=args.pi,
             simulator_draws=args.simulator_draws,
             run_pi_gate=args.run_pi_conformance,
+            # Exclude exactly the bound frozen artifacts themselves when they
+            # share the scanned run root (same policy as freeze), so a bank-
+            # reuse generation scanning its own dedicated run root does not
+            # self-collide with its manifest/registry.
+            exclude_paths=_derive_bound_artifact_exclusions(
+                args.run_root,
+                Path(args.registry).expanduser().resolve(),
+                Path(args.manifest).expanduser().resolve(),
+                args.output,
+            ),
         )
         validate_local_preflight(
             preflight,
@@ -3599,6 +3659,12 @@ def main(argv: list[str] | None = None) -> int:
             args.run_root,
             pi_executable=args.pi,
             simulator_draws=args.simulator_draws,
+            exclude_paths=_derive_bound_artifact_exclusions(
+                args.run_root,
+                Path(args.registry).expanduser().resolve(),
+                Path(args.manifest).expanduser().resolve(),
+                args.output,
+            ),
             require_pi_conformance=args.run_pi_conformance,
         )
         _write_immutable_json(Path(args.output).expanduser().resolve(), preflight)
