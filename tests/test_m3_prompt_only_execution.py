@@ -2104,6 +2104,11 @@ class ProcessOwnershipTest(unittest.TestCase):
                 port_release_wait_seconds=0.0,
             )
 
+    @unittest.skipUnless(
+        sys.platform == "darwin",
+        "TIME_WAIT observability semantics are macOS-specific (CI runners "
+        "on Linux do not expose the lingering socket the same way)",
+    )
     def test_local_port_available_allows_time_wait_but_refuses_live_listener(
         self,
     ) -> None:
