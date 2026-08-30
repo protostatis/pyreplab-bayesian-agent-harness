@@ -1,0 +1,299 @@
+{
+ "dataset_rows": {
+  "train": {
+   "C": 11,
+   "E": 11,
+   "R": 12
+  },
+  "validation": {
+   "C": 4,
+   "R": 4,
+   "E": 4
+  },
+  "test": {
+   "R": 7,
+   "E": 4,
+   "C": 5
+  }
+ },
+ "metrics": {
+  "metrics": {
+   "train": {
+    "n": 34,
+    "log_loss": 0.671092986823629,
+    "brier": 0.2389866064613121,
+    "accuracy_05": 0.6470588235294118,
+    "ece": 0.1257300587261424,
+    "mean_posterior_std": 0.015767807688783195,
+    "average_precision": 0.7702380952380952,
+    "precision": 0.0,
+    "recall": 0.0,
+    "f1": 0.0,
+    "tp": 0,
+    "fp": 0,
+    "fn": 12,
+    "tn": 22,
+    "per_policy": {
+     "baseline_execution": {
+      "n": 11,
+      "log_loss": 0.6777484234030431,
+      "brier": 0.24230893206584278,
+      "accuracy_05": 0.5454545454545454,
+      "ece": 0.030692487955093384,
+      "mean_posterior_std": 0.016607321121475914,
+      "average_precision": 0.925,
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0,
+      "tp": 0,
+      "fp": 0,
+      "fn": 5,
+      "tn": 6
+     },
+     "execution_discipline": {
+      "n": 11,
+      "log_loss": 0.6614276087820226,
+      "brier": 0.23416220730279724,
+      "accuracy_05": 0.7272727272727273,
+      "ece": 0.20221271027218213,
+      "mean_posterior_std": 0.015349101613868366,
+      "average_precision": 0.6666666666666666,
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0,
+      "tp": 0,
+      "fp": 0,
+      "fn": 3,
+      "tn": 8
+     },
+     "execution_recovery_discipline": {
+      "n": 12,
+      "log_loss": 0.6738520998306384,
+      "brier": 0.24036350721913088,
+      "accuracy_05": 0.6666666666666666,
+      "ece": 0.14273873468240106,
+      "mean_posterior_std": 0.015382067610820135,
+      "average_precision": 0.6666666666666666,
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0,
+      "tp": 0,
+      "fp": 0,
+      "fn": 4,
+      "tn": 8
+     }
+    }
+   },
+   "validation": {
+    "n": 12,
+    "log_loss": 0.6953333092706012,
+    "brier": 0.2510907322492962,
+    "accuracy_05": 0.5,
+    "ece": 0.029883558551470457,
+    "mean_posterior_std": 0.016760638759781916,
+    "average_precision": 0.48333333333333334,
+    "precision": 0.0,
+    "recall": 0.0,
+    "f1": 0.0,
+    "tp": 0,
+    "fp": 0,
+    "fn": 6,
+    "tn": 6,
+    "per_policy": {
+     "baseline_execution": {
+      "n": 4,
+      "log_loss": 0.726002083297584,
+      "brier": 0.26640590419236254,
+      "accuracy_05": 0.25,
+      "ece": 0.2807026207447052,
+      "mean_posterior_std": 0.01756684109568596,
+      "average_precision": 0.6666666666666666,
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0,
+      "tp": 0,
+      "fp": 0,
+      "fn": 3,
+      "tn": 1
+     },
+     "execution_discipline": {
+      "n": 4,
+      "log_loss": 0.6651146808928611,
+      "brier": 0.23599980658610642,
+      "accuracy_05": 0.75,
+      "ece": 0.22048689424991608,
+      "mean_posterior_std": 0.017316295765340328,
+      "average_precision": 0.5,
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0,
+      "tp": 0,
+      "fp": 0,
+      "fn": 1,
+      "tn": 3
+     },
+     "execution_recovery_discipline": {
+      "n": 4,
+      "log_loss": 0.6948831636213586,
+      "brier": 0.25086648596941963,
+      "accuracy_05": 0.5,
+      "ece": 0.029434949159622192,
+      "mean_posterior_std": 0.015398779418319464,
+      "average_precision": 0.5,
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0,
+      "tp": 0,
+      "fp": 0,
+      "fn": 2,
+      "tn": 2
+     }
+    }
+   },
+   "test": {
+    "n": 16,
+    "log_loss": 0.6866442058377917,
+    "brier": 0.2467524200247665,
+    "accuracy_05": 0.5625,
+    "ece": 0.03750307857990265,
+    "mean_posterior_std": 0.01566261559491977,
+    "average_precision": 0.548051948051948,
+    "precision": 0.0,
+    "recall": 0.0,
+    "f1": 0.0,
+    "tp": 0,
+    "fp": 0,
+    "fn": 7,
+    "tn": 9,
+    "per_policy": {
+     "baseline_execution": {
+      "n": 4,
+      "log_loss": 0.7187959531192368,
+      "brier": 0.26281408100199277,
+      "accuracy_05": 0.25,
+      "ece": 0.2758511006832123,
+      "mean_posterior_std": 0.01713334582746029,
+      "average_precision": 1.0,
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0,
+      "tp": 0,
+      "fp": 0,
+      "fn": 3,
+      "tn": 1
+     },
+     "execution_discipline": {
+      "n": 5,
+      "log_loss": 0.703503581343168,
+      "brier": 0.25517429445505824,
+      "accuracy_05": 0.4,
+      "ece": 0.12310533523559569,
+      "mean_posterior_std": 0.015951401367783547,
+      "average_precision": 0.7333333333333334,
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0,
+      "tp": 0,
+      "fp": 0,
+      "fn": 3,
+      "tn": 2
+     },
+     "execution_recovery_discipline": {
+      "n": 7,
+      "log_loss": 0.6562293677445542,
+      "brier": 0.2315587034447145,
+      "accuracy_05": 0.8571428571428571,
+      "ece": 0.3312829051698957,
+      "mean_posterior_std": 0.014615922767136778,
+      "average_precision": 0.3333333333333333,
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0,
+      "tp": 0,
+      "fp": 0,
+      "fn": 1,
+      "tn": 6
+     }
+    }
+   }
+  },
+  "config": {
+   "vocab_size": 38,
+   "max_tokens": 128,
+   "num_numeric": 2,
+   "cat_sizes": {
+    "family": 2,
+    "template_id": 4,
+    "difficulty": 3,
+    "policy_id": 4,
+    "policy_version": 2
+   },
+   "treatment_enabled": true,
+   "num_treatment_numeric": 4,
+   "treatment_cat_sizes": {
+    "tool_interface": 2,
+    "allowed_tools_signature": 2,
+    "bundle_id": 4
+   },
+   "text_dim": 64,
+   "cat_dim": 32,
+   "numeric_hidden": 32,
+   "fusion_hidden": 64,
+   "dropout": 0.2,
+   "prior_sigma": 5.0,
+   "rho_init": -3.0,
+   "weight_init_std": 0.05
+  },
+  "training": {
+   "seed": 42,
+   "device": "cpu",
+   "epochs_configured": 60,
+   "epochs_run": 9,
+   "best_epoch": 1,
+   "patience": 8,
+   "batch_size": 16,
+   "num_samples": 50,
+   "lr": 0.001,
+   "dataset": "/Users/zhiminzou/Projects/pyreplab_bayesian_agent_harness/.runs/engine_validation/screening_history_dataset.jsonl",
+   "torch_version": "2.13.0",
+   "train_rows": 34,
+   "validation_rows": 12,
+   "test_rows": 16,
+   "feature_schema_version": 2,
+   "treatment_encoder_enabled": true,
+   "seen_treatment_bundle_ids": [
+    "131b7f33f8a1aa1c",
+    "1f37763e09dec5f2",
+    "7427662f68f71932"
+   ]
+  }
+ },
+ "hard_stratum_recovery": {
+  "C": {
+   "name": "execution-discipline prompt",
+   "n_test": 5,
+   "predicted_mean": 0.476,
+   "observed_mean": 0.6,
+   "pred_std": 0.0
+  },
+  "E": {
+   "name": "baseline prompt (no discipline rules)",
+   "n_test": 4,
+   "predicted_mean": 0.474,
+   "observed_mean": 0.75,
+   "pred_std": 0.001
+  },
+  "R": {
+   "name": "execution + recovery discipline prompt",
+   "n_test": 7,
+   "predicted_mean": 0.472,
+   "observed_mean": 0.143,
+   "pred_std": 0.002
+  }
+ },
+ "recovery_check": {
+  "weakest_arm_by_prediction": "R",
+  "weakest_arm_observed": "R",
+  "recovered": true
+ }
+}
