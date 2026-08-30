@@ -7,6 +7,7 @@ import re
 import subprocess
 import sys
 import tempfile
+import shutil
 import unittest
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
@@ -4405,6 +4406,12 @@ class DetachedLaunchTest(unittest.TestCase):
         )
 
 
+_PI_AVAILABLE = shutil.which("pi") is not None
+
+
+@unittest.skipUnless(
+    _PI_AVAILABLE, "requires the pi CLI binary on PATH (local controller only)"
+)
 class RemotePreflightTest(unittest.TestCase):
     def setUp(self) -> None:
         self._tmp = tempfile.TemporaryDirectory()
