@@ -80,13 +80,13 @@ from .unbrowser_fixture_gym import (
 # Schema and identity constants
 # ---------------------------------------------------------------------------
 
-MANIFEST_SCHEMA_VERSION = "m3-prompt-only-pilot-manifest-v14"
-PREFLIGHT_SCHEMA_VERSION = "m3-prompt-only-pilot-local-preflight-v14"
+MANIFEST_SCHEMA_VERSION = "m3-prompt-only-pilot-manifest-v15"
+PREFLIGHT_SCHEMA_VERSION = "m3-prompt-only-pilot-local-preflight-v15"
 COMMAND_RECEIPT_SCHEMA_VERSION = "m3-prompt-only-pilot-command-arm-receipt-v1"
 SIMULATOR_REPORT_SCHEMA_VERSION = "m3-prompt-only-pilot-simulator-report-v1"
 ANALYSIS_SCHEMA_VERSION = "m3-prompt-only-pilot-analysis-v1"
 LEDGER_SCHEMA_VERSION = "m3-prompt-only-pilot-ledger-v1"
-SUBSTRATE_RECEIPT_SCHEMA_VERSION = "m3-prompt-only-pilot-substrate-receipt-v14"
+SUBSTRATE_RECEIPT_SCHEMA_VERSION = "m3-prompt-only-pilot-substrate-receipt-v15"
 WALL_BUDGET_AMENDMENT_SCHEMA_VERSION = "m3-prompt-only-wall-budget-amendment-v1"
 SOURCE_BUNDLE_SCHEMA_VERSION = "m3-prompt-only-source-bundle-v1"
 PI_CONFORMANCE_SCHEMA_VERSION = "m3-prompt-only-pi-conformance-receipt-v1"
@@ -129,7 +129,7 @@ ARM_SEVERE_VETO_CODES = (
 )
 SEVERE_VETO_CODES = GENERATION_INVALID_VETO_CODES + ARM_SEVERE_VETO_CODES
 
-SCREEN_ID = "m3-prompt-only-pilot-20260816-v14"
+SCREEN_ID = "m3-prompt-only-pilot-20260816-v15"
 TASK_ROLE = "T_pilot"
 TASK_SPLIT = "pilot_excluded"
 TREATMENT_VERSION = "pilot-excluded-v1"
@@ -140,7 +140,7 @@ TASK_PROMPT_PROFILE = "outcome_only_v1"
 # pilot uses exactly this fixed dummy value via ``--api-key`` on the production
 # command. It is a constant that is NEVER a credential: artifacts bind only its
 # mode and SHA-256 (see :func:`dummy_api_key_binding`), never the literal.
-DUMMY_PROVIDER_API_KEY = "pyreplab-prompt-pilot-dummy-key-v14"
+DUMMY_PROVIDER_API_KEY = "pyreplab-prompt-pilot-dummy-key-v15"
 
 # Run-specific, generation-bound erase-only slot-action directory. This is an
 # explicit feature-gate exception: native KV persistence remains forbidden, and
@@ -166,10 +166,10 @@ ROLLOUT_REPLICAS = 2
 TASK_SEED_START = 2026093001
 SAMPLING_SEED_START = 1900013001
 # Genuinely fresh 32-bit 10-digit values that do not occur anywhere in current
-# ``.runs`` (including the aborted or infrastructure-invalid v1-v10 prompt-only
-# task/sampling/schedule/simulator seeds).
-SCHEDULE_SEED = 1608262505
-SIMULATOR_SEED = 1608262506
+# ``.runs`` (including the aborted or infrastructure-invalid v1-v14 prompt-only
+# task/sampling/schedule/simulator seeds). v15: panel-major schedule family.
+SCHEDULE_SEED = 1607409695
+SIMULATOR_SEED = 1630512639
 
 EXPECTED_TASKS = len(PROMPT_TEMPLATES) * len(DIFFICULTIES) * TASK_SEEDS_PER_CELL
 EXPECTED_PANELS = EXPECTED_TASKS * ROLLOUT_REPLICAS
@@ -581,60 +581,80 @@ def _build_cells(
     return cells
 
 
-def _stratified_execution_order(
+def _seeded_shuffle(state: int, lst: list[Any]) -> None:
+    """In-place Fisher-Yates on ``lst`` driven by a 32-bit xorshift state."""
+    if state == 0:
+        state = 0x9E3779B9
+
+    def _next_u32() -> int:
+        nonlocal state
+        state ^= (state << 13) & 0xFFFFFFFF
+        state ^= state >> 17
+        state ^= (state << 5) & 0xFFFFFFFF
+        return state & 0xFFFFFFFF
+
+    for idx in range(len(lst) - 1, 0, -1):
+        pick = _next_u32() % (idx + 1)
+        lst[idx], lst[pick] = lst[pick], lst[idx]
+
+
+def _panel_major_execution_order(
     cells: list[dict[str, Any]], seed: int = SCHEDULE_SEED
 ) -> list[dict[str, Any]]:
-    """Seeded stratified shuffle of cells for bounded-damage execution order.
+    """v15 schedule family: panel-major within difficulty superblocks.
 
-    Groups cells by difficulty stratum, Fisher-Yates shuffles within each
-    stratum using a stratum-mixed seed, then round-robin interleaves strata
-    (easy → medium → hard, repeat). This guarantees any early prefix (e.g.
-    first 24 cells) spans all difficulty strata, so an interruption cannot
-    amputate an entire stratum.
+    Panels are grouped into superblocks of three (one easy + one medium + one
+    hard panel). Within each difficulty stratum the panel order is a seeded
+    Fisher-Yates shuffle; the superblock order itself is a seeded shuffle.
+    Each panel's three arm-cells run consecutively in the panel's frozen
+    ``execution_order`` (which is counterbalanced across panels by
+    ``_build_panels``). At any cell-count prefix this yields roughly one
+    complete panel per three cells (~16 complete panels at 48 cells), so
+    task-clustered contrasts gain power quickly while difficulty remains
+    covered every superblock (panel-approximate balance, bounded ±1 panel).
 
     Deterministic and frozen in the manifest via ``build_schedule``.
     """
-    from collections import defaultdict
-
-    groups: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    cells_by_panel: dict[str, list[dict[str, Any]]] = {}
     for cell in cells:
-        groups[cell["difficulty"]].append(cell)
+        cells_by_panel.setdefault(cell["panel_id"], []).append(cell)
+    for panel_cells in cells_by_panel.values():
+        panel_cells.sort(key=lambda c: c["position"])
 
-    # Seeded Fisher-Yates per stratum (deterministic: no Python hash randomization)
-    diff_order = {"easy": 0x9E3779B1, "medium": 0x85EBCA77, "hard": 0xC2B2AE3D}
-    for diff in sorted(groups.keys()):
-        # Mix seed with difficulty-specific constant
-        mixed = (seed ^ diff_order.get(diff, 0x9E3779B9)) & 0xFFFFFFFF
-        state = mixed if mixed != 0 else 0x9E3779B9
-        lst = groups[diff]
+    panels_by_difficulty: dict[str, list[list[dict[str, Any]]]] = {
+        "easy": [],
+        "medium": [],
+        "hard": [],
+    }
+    for panel_id, panel_cells in cells_by_panel.items():
+        difficulty = panel_cells[0]["difficulty"]
+        panels_by_difficulty[difficulty].append(panel_cells)
 
-        def _next_u32() -> int:
-            nonlocal state
-            state ^= (state << 13) & 0xFFFFFFFF
-            state ^= state >> 17
-            state ^= (state << 5) & 0xFFFFFFFF
-            return state & 0xFFFFFFFF
+    stratum_constants = {"easy": 0x9E3779B1, "medium": 0x85EBCA77, "hard": 0xC2B2AE3D}
+    for difficulty, panel_list in panels_by_difficulty.items():
+        mixed = (seed ^ stratum_constants[difficulty]) & 0xFFFFFFFF
+        _seeded_shuffle(mixed, panel_list)
 
-        for idx in range(len(lst) - 1, 0, -1):
-            pick = _next_u32() % (idx + 1)
-            lst[idx], lst[pick] = lst[pick], lst[idx]
+    superblocks: list[list[list[dict[str, Any]]]] = [
+        [panels_by_difficulty["easy"][i],
+         panels_by_difficulty["medium"][i],
+         panels_by_difficulty["hard"][i]]
+        for i in range(min(len(v) for v in panels_by_difficulty.values()))
+    ]
+    _seeded_shuffle((seed ^ 0x27D4EB2F) & 0xFFFFFFFF, superblocks)
 
-    # Round-robin interleave: easy → medium → hard
-    order = [d for d in ("easy", "medium", "hard") if d in groups]
-    max_len = max(len(v) for v in groups.values())
-    out: list[dict[str, Any]] = []
-    for slot in range(max_len):
-        for diff in order:
-            if slot < len(groups[diff]):
-                out.append(groups[diff][slot])
-    return out
+    order: list[dict[str, Any]] = []
+    for superblock in superblocks:
+        for panel_cells in superblock:
+            order.extend(panel_cells)
+    return order
 
 
 def build_schedule() -> dict[str, Any]:
     tasks = _build_tasks()
     panels = _build_panels(tasks)
     cells = _build_cells(tasks, panels)
-    cells = _stratified_execution_order(cells, SCHEDULE_SEED)
+    cells = _panel_major_execution_order(cells, SCHEDULE_SEED)
     return {"tasks": tasks, "panels": panels, "cells": cells}
 
 
@@ -712,6 +732,29 @@ def validate_schedule(schedule: Mapping[str, Any]) -> None:
         raise ValueError(
             f"replica chronology is not counterbalanced: {first_replica_counts}"
         )
+    # v15 panel-major machine-checks (advisory gate 4)
+    sequence = [cell["panel_id"] for cell in cells]
+    blocks: list[tuple[str, ...]] = []
+    for start in range(0, len(sequence), len(ARMS)):
+        blocks.append(tuple(sequence[start : start + len(ARMS)]))
+    if any(len(set(block)) != 1 for block in blocks):
+        raise ValueError("v15 schedule must run each panel's arm-cells consecutively")
+    if len(blocks) != EXPECTED_PANELS or set(blocks) != set(
+        (panel["panel_id"],) * len(ARMS) for panel in panels
+    ):
+        raise ValueError("v15 schedule must contain every panel exactly once")
+    difficulty_by_panel = {
+        panel["panel_id"]: task_by_id[panel["task_id"]]["difficulty"]
+        for panel in panels
+    }
+    for start in range(0, len(blocks), len(DIFFICULTIES)):
+        superblock = blocks[start : start + len(DIFFICULTIES)]
+        difficulties = sorted(difficulty_by_panel[block[0]] for block in superblock)
+        if difficulties != sorted(DIFFICULTIES):
+            raise ValueError(
+                "v15 superblock must contain exactly one easy, one medium and "
+                f"one hard panel; got {difficulties}"
+            )
 
 
 # ---------------------------------------------------------------------------
