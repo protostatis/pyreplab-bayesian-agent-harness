@@ -31,6 +31,11 @@ pyreplab-m3-observation-canary-gate = "pyreplab_harness.m3_observation_canary_ga
 pyreplab-m3-semantic-capability-gate = "pyreplab_harness.m3_semantic_capability_gate:main"
 pyreplab-m3-semantic-diagnostic = "pyreplab_harness.m3_semantic_diagnostic:main"
 pyreplab-m3-utility-routing-smoke = "pyreplab_harness.m3_utility_routing_smoke:main"
+pyreplab-m3-empty-overlay-baseline = "pyreplab_harness.m3_empty_overlay_baseline:main"
+pyreplab-m3-empty-overlay-execution = "pyreplab_harness.m3_empty_overlay_execution:main"
+pyreplab-cache-mechanics = "pyreplab_harness.cache_mechanics:main"
+pyreplab-cache-proxy = "pyreplab_harness.cache_proxy:main"
+pyreplab-cache-canary-substrate = "pyreplab_harness.cache_canary_substrate:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
