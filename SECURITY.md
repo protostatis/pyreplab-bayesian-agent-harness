@@ -29,6 +29,32 @@ The optional Unbrowser smoke is intentionally not a general browsing tool:
 - A separate `unbrowser` child runs as the least-privilege user on the
   disposable SSH runner, outside Bubblewrap, because it requires outbound
   network access.
+- **Confined mode (recommended for fixture/interactive tasks):** When the
+  worker is started with `--confine-unbrowser`, the Unbrowser binary runs
+  inside its own Bubblewrap sandbox that retains network access but restricts
+  filesystem visibility:
+  - The Unbrowser binary is read-only bound.
+  - Minimal runtime libraries (`/usr/lib`, `/lib`, `/lib64`) are read-only
+    bound.
+  - DNS config (`/etc/resolv.conf`) and TLS certs (`/etc/ssl`) are read-only
+    bound.
+  - A fresh `/dev`, `/proc`, and `/tmp` (tmpfs) are provided.
+  - A writable temporary HOME (`/home/unbrowser`) lives inside the sandbox,
+    not on the host.
+  - **The following are NOT mounted and must be unreachable:**
+    - `/home` and any user home directory (project source, SSH keys, agent
+      sockets, model files, Pi installation)
+    - `/root`
+    - The current working directory of the host process
+    - Run artifact directories
+  - Network namespace is intentionally retained (no `--unshare-net`) so the
+    browser can reach fixture pages and Wikipedia over HTTPS.
+  - All other namespaces (user, pid, ipc, mount) are unshared.
+  - The `--clearenv` flag is used, and only explicit `--setenv` variables
+    (HOME, TMPDIR, PATH, LANG, UNBROWSER_TIMEOUT_MS) are set inside the
+    sandbox.
+  - A GNU `timeout` wrapper provides defence-in-depth: if the sandbox hangs,
+    the kernel delivers SIGKILL after the configured timeout.
 - The model cannot provide a URL. The adapter accepts only the exact public
   smoke page `https://example.com/`, checks the final reported URL, and exposes
   only `navigate`, `query`, `text`, and `blockmap`.
@@ -46,6 +72,51 @@ URL can be checked. Do not change the URL, enable redirects to untrusted
 targets, add credentials, or expose mutating/advanced methods without a new
 security review. Run this smoke only on a disposable runner that contains no
 secrets.
+
+## Interactive Unbrowser plumbing spike
+
+The interactive Unbrowser path (`unbrowser_interactive` family) is a
+**disposable-host plumbing spike, not a security boundary**. It adds
+`click`, `type`, and `submit` to the adapter for the Wikipedia search smoke:
+
+- When `--confine-unbrowser` is enabled, the interactive path runs inside the
+  same Bubblewrap sandbox as the read-only path (see above).  This is the
+  **recommended** configuration for fixture tasks.
+- Without confinement (default), the residual risks listed below apply.
+
+- The initial URL is controller-fixed to `https://en.wikipedia.org/wiki/Main_Page`.
+- After navigation, the adapter checks `status` and `challenge` fields in the
+  response. Non-200 status or a present challenge blocks all further
+  read/interactive actions until a fresh `navigate` succeeds.
+- After `click` or `submit`, the adapter enforces same-origin: the final URL
+  must start with `https://en.wikipedia.org/`. Off-origin URLs kill the
+  process group immediately.
+- Element refs from `query`/`text`/`blockmap` results are session-scoped and
+  become stale after navigation. Unknown or stale refs fail closed with a
+  clear error.
+- `type` values are bounded (max 1024 chars, no NUL bytes). Ref strings are
+  bounded (max 256 chars) with no control characters.
+- **No** cookies, authentication, JavaScript evaluation (`eval`/QuickJS),
+  downloads, `POST` requests, arbitrary URL navigation, or raw JSON-RPC
+  are exposed.
+
+**Explicit residual risks:**
+
+1. This is **NOT** SSRF-safe. The outbound HTTP request occurs before the
+   final URL can be checked. Redirects, DNS rebinding, or connection-level
+   attacks are not prevented.
+2. The adapter runs outside Bubblewrap on the disposable SSH runner. Do not
+   run on a host containing secrets, credentials, or production data.
+3. Only `GET`-based form submission is supported. Any form requiring `POST`
+   should fail.
+4. The same-origin enforcement is a post-navigation check, not a connection-
+   level filter. A malicious Wikipedia article could theoretically link to
+   an off-origin page, though this would be caught and kill the session.
+
+This path shares the base Unbrowser security constraints (fresh process per
+attempt, bounded JSON-RPC lines, timeouts, result-size limits, minimal
+environment, process group kill on failure). Use only with a dedicated
+least-privilege SSH identity and disposable runner.
 
 ## Sensitive outputs
 

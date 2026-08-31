@@ -1,0 +1,107 @@
+{
+  "policy_bundle_ids": [
+    "ub-direct-semantic-table-submit-directly-diagnose-retry-expanded@1-canary-excluded-c618fe8c",
+    "ub-direct-semantic-form-submit-directly-diagnose-retry-expanded@1-canary-excluded-d9b3e25a"
+  ],
+  "protocol": {
+    "claim_boundary": "screening_futility_only",
+    "decision_rule": {
+      "maximum_absolute_success_difference": 4,
+      "maximum_discordant_cells": 2,
+      "maximum_successes_per_arm": 14,
+      "minimum_stable_form_only_tasks": 1,
+      "minimum_stable_table_only_tasks": 1,
+      "minimum_successes_per_arm": 2
+    },
+    "mechanism": {
+      "name": "controller_owned_public_html_semantic_operation",
+      "receipt_schema_version": "pyreplab-semantic-specialist-receipt-v1"
+    },
+    "parent_bundle_ids": {
+      "form_specialist": "ub-direct-text_first-submit_directly-diagnose_retry_once-lean@2-b153007b",
+      "table_specialist": "ub-direct-text_first-submit_directly-diagnose_retry_once-lean@2-b153007b"
+    },
+    "run_policy": {
+      "early_outcome_stop": false,
+      "outcome_driven_replacement": false
+    },
+    "schema_version": "m3-semantic-capability-protocol-v1",
+    "stage": "outcome_screen",
+    "task_groups": {
+      "form": [
+        "unbrowser-fixture-v2-form_entry_validation-easy-2026087105",
+        "unbrowser-fixture-v2-form_entry_validation-medium-2026087106",
+        "unbrowser-fixture-v2-form_entry_validation-hard-2026087107",
+        "unbrowser-fixture-v2-form_entry_validation-medium-2026087108"
+      ],
+      "table": [
+        "unbrowser-fixture-v2-table_filter_sort-easy-2026087101",
+        "unbrowser-fixture-v2-table_filter_sort-medium-2026087102",
+        "unbrowser-fixture-v2-table_filter_sort-hard-2026087103",
+        "unbrowser-fixture-v2-table_filter_sort-medium-2026087104"
+      ]
+    },
+    "task_selection": {
+      "boundary": "Targeted capability-family screen; not a population sample or causal task-family estimate.",
+      "seed_rule": "eight fresh sequential seeds reserved after mechanics v2 passed"
+    }
+  },
+  "purpose": "Screen for repeat-stable table-only and form-only niches after deterministic specialist mechanics passed.",
+  "remote_identity": {
+    "host": "ubuntu-local",
+    "project": "/home/zhimin90/Projects/pyreplab_bayesian_agent_harness",
+    "python": "python3",
+    "run_root": "/home/zhimin90/Projects/pyreplab_bayesian_agent_harness/.runs/m3-semantic-outcome-20260812-v1"
+  },
+  "rollout_replicas": 2,
+  "sampling_seed_start": 1900004001,
+  "schedule_seed": 2026081204,
+  "screen_id": "m3-semantic-outcome-20260812-v1",
+  "selection": {
+    "boundary": "Screening/futility only; no causal, allocator-effectiveness, or general task-family claim.",
+    "mechanics_qualification": "m3-semantic-mechanics-20260812-v2 gate decision mechanics_pass"
+  },
+  "task_role": "T_canary",
+  "tasks": [
+    {
+      "difficulty": "easy",
+      "seed": 2026087101,
+      "template": "table_filter_sort"
+    },
+    {
+      "difficulty": "medium",
+      "seed": 2026087102,
+      "template": "table_filter_sort"
+    },
+    {
+      "difficulty": "hard",
+      "seed": 2026087103,
+      "template": "table_filter_sort"
+    },
+    {
+      "difficulty": "medium",
+      "seed": 2026087104,
+      "template": "table_filter_sort"
+    },
+    {
+      "difficulty": "easy",
+      "seed": 2026087105,
+      "template": "form_entry_validation"
+    },
+    {
+      "difficulty": "medium",
+      "seed": 2026087106,
+      "template": "form_entry_validation"
+    },
+    {
+      "difficulty": "hard",
+      "seed": 2026087107,
+      "template": "form_entry_validation"
+    },
+    {
+      "difficulty": "medium",
+      "seed": 2026087108,
+      "template": "form_entry_validation"
+    }
+  ]
+}

@@ -1,0 +1,510 @@
+{
+  "exclusion": "T_pilot tasks and all attempts are permanently excluded from meta-training, calibration, development, and final evaluation pools.",
+  "gates": {
+    "attempts": 96,
+    "headroom_tasks": 10,
+    "maximum_repeat_discordance_rate": 0.1,
+    "minimum_cost_mean_ratio": 1.2,
+    "minimum_cross_replica_lift_successes": 1.0,
+    "minimum_observation_adherence": 0.75,
+    "minimum_planning_adherence": 0.75,
+    "minimum_recovery_rate_difference": 0.25,
+    "minimum_stable_disagreement_tasks": 2,
+    "minimum_verification_opportunities_per_level": 8,
+    "minimum_verification_rate_difference": 0.25,
+    "panels": 24,
+    "policies_per_task": 4,
+    "required_recovery_eligible_per_level": 8,
+    "rollout_replicas": 2,
+    "tasks": 12,
+    "tool_cap_compliance": 1.0
+  },
+  "grammar_version": "m3-v2",
+  "held_templates": [
+    "cross_page_comparison",
+    "stateful_workflow"
+  ],
+  "known_templates": [
+    "single_page_extraction",
+    "table_filter_sort",
+    "multi_page_navigation",
+    "search_filter_controls",
+    "form_entry_validation",
+    "distractor_recovery"
+  ],
+  "manifest_hash": "e7f257c48548245b3aaba965c81bff4e548c06fca06b16c84e10eadf2daf0931",
+  "panels": [
+    {
+      "execution_order": [
+        "A",
+        "B",
+        "C",
+        "D"
+      ],
+      "panel_id": "unbrowser-fixture-v2-single_page_extraction-easy-2026081001/replica=0",
+      "rollout_replica": 0,
+      "sampling_seed": 2026082001,
+      "task_id": "unbrowser-fixture-v2-single_page_extraction-easy-2026081001"
+    },
+    {
+      "execution_order": [
+        "A",
+        "B",
+        "D",
+        "C"
+      ],
+      "panel_id": "unbrowser-fixture-v2-table_filter_sort-hard-2026081003/replica=0",
+      "rollout_replica": 0,
+      "sampling_seed": 2026082005,
+      "task_id": "unbrowser-fixture-v2-table_filter_sort-hard-2026081003"
+    },
+    {
+      "execution_order": [
+        "A",
+        "C",
+        "B",
+        "D"
+      ],
+      "panel_id": "unbrowser-fixture-v2-multi_page_navigation-medium-2026081005/replica=0",
+      "rollout_replica": 0,
+      "sampling_seed": 2026082009,
+      "task_id": "unbrowser-fixture-v2-multi_page_navigation-medium-2026081005"
+    },
+    {
+      "execution_order": [
+        "A",
+        "C",
+        "D",
+        "B"
+      ],
+      "panel_id": "unbrowser-fixture-v2-search_filter_controls-easy-2026081007/replica=0",
+      "rollout_replica": 0,
+      "sampling_seed": 2026082013,
+      "task_id": "unbrowser-fixture-v2-search_filter_controls-easy-2026081007"
+    },
+    {
+      "execution_order": [
+        "A",
+        "D",
+        "B",
+        "C"
+      ],
+      "panel_id": "unbrowser-fixture-v2-form_entry_validation-hard-2026081009/replica=0",
+      "rollout_replica": 0,
+      "sampling_seed": 2026082017,
+      "task_id": "unbrowser-fixture-v2-form_entry_validation-hard-2026081009"
+    },
+    {
+      "execution_order": [
+        "A",
+        "D",
+        "C",
+        "B"
+      ],
+      "panel_id": "unbrowser-fixture-v2-distractor_recovery-medium-2026081011/replica=0",
+      "rollout_replica": 0,
+      "sampling_seed": 2026082021,
+      "task_id": "unbrowser-fixture-v2-distractor_recovery-medium-2026081011"
+    },
+    {
+      "execution_order": [
+        "B",
+        "A",
+        "D",
+        "C"
+      ],
+      "panel_id": "unbrowser-fixture-v2-single_page_extraction-easy-2026081001/replica=1",
+      "rollout_replica": 1,
+      "sampling_seed": 2026082002,
+      "task_id": "unbrowser-fixture-v2-single_page_extraction-easy-2026081001"
+    },
+    {
+      "execution_order": [
+        "B",
+        "A",
+        "C",
+        "D"
+      ],
+      "panel_id": "unbrowser-fixture-v2-table_filter_sort-hard-2026081003/replica=1",
+      "rollout_replica": 1,
+      "sampling_seed": 2026082006,
+      "task_id": "unbrowser-fixture-v2-table_filter_sort-hard-2026081003"
+    },
+    {
+      "execution_order": [
+        "B",
+        "D",
+        "A",
+        "C"
+      ],
+      "panel_id": "unbrowser-fixture-v2-multi_page_navigation-medium-2026081005/replica=1",
+      "rollout_replica": 1,
+      "sampling_seed": 2026082010,
+      "task_id": "unbrowser-fixture-v2-multi_page_navigation-medium-2026081005"
+    },
+    {
+      "execution_order": [
+        "B",
+        "D",
+        "C",
+        "A"
+      ],
+      "panel_id": "unbrowser-fixture-v2-search_filter_controls-easy-2026081007/replica=1",
+      "rollout_replica": 1,
+      "sampling_seed": 2026082014,
+      "task_id": "unbrowser-fixture-v2-search_filter_controls-easy-2026081007"
+    },
+    {
+      "execution_order": [
+        "B",
+        "C",
+        "A",
+        "D"
+      ],
+      "panel_id": "unbrowser-fixture-v2-form_entry_validation-hard-2026081009/replica=1",
+      "rollout_replica": 1,
+      "sampling_seed": 2026082018,
+      "task_id": "unbrowser-fixture-v2-form_entry_validation-hard-2026081009"
+    },
+    {
+      "execution_order": [
+        "B",
+        "C",
+        "D",
+        "A"
+      ],
+      "panel_id": "unbrowser-fixture-v2-distractor_recovery-medium-2026081011/replica=1",
+      "rollout_replica": 1,
+      "sampling_seed": 2026082022,
+      "task_id": "unbrowser-fixture-v2-distractor_recovery-medium-2026081011"
+    },
+    {
+      "execution_order": [
+        "C",
+        "D",
+        "A",
+        "B"
+      ],
+      "panel_id": "unbrowser-fixture-v2-single_page_extraction-medium-2026081002/replica=1",
+      "rollout_replica": 1,
+      "sampling_seed": 2026082004,
+      "task_id": "unbrowser-fixture-v2-single_page_extraction-medium-2026081002"
+    },
+    {
+      "execution_order": [
+        "C",
+        "D",
+        "B",
+        "A"
+      ],
+      "panel_id": "unbrowser-fixture-v2-table_filter_sort-easy-2026081004/replica=1",
+      "rollout_replica": 1,
+      "sampling_seed": 2026082008,
+      "task_id": "unbrowser-fixture-v2-table_filter_sort-easy-2026081004"
+    },
+    {
+      "execution_order": [
+        "C",
+        "A",
+        "D",
+        "B"
+      ],
+      "panel_id": "unbrowser-fixture-v2-multi_page_navigation-hard-2026081006/replica=1",
+      "rollout_replica": 1,
+      "sampling_seed": 2026082012,
+      "task_id": "unbrowser-fixture-v2-multi_page_navigation-hard-2026081006"
+    },
+    {
+      "execution_order": [
+        "C",
+        "A",
+        "B",
+        "D"
+      ],
+      "panel_id": "unbrowser-fixture-v2-search_filter_controls-medium-2026081008/replica=1",
+      "rollout_replica": 1,
+      "sampling_seed": 2026082016,
+      "task_id": "unbrowser-fixture-v2-search_filter_controls-medium-2026081008"
+    },
+    {
+      "execution_order": [
+        "C",
+        "B",
+        "D",
+        "A"
+      ],
+      "panel_id": "unbrowser-fixture-v2-form_entry_validation-easy-2026081010/replica=1",
+      "rollout_replica": 1,
+      "sampling_seed": 2026082020,
+      "task_id": "unbrowser-fixture-v2-form_entry_validation-easy-2026081010"
+    },
+    {
+      "execution_order": [
+        "C",
+        "B",
+        "A",
+        "D"
+      ],
+      "panel_id": "unbrowser-fixture-v2-distractor_recovery-hard-2026081012/replica=1",
+      "rollout_replica": 1,
+      "sampling_seed": 2026082024,
+      "task_id": "unbrowser-fixture-v2-distractor_recovery-hard-2026081012"
+    },
+    {
+      "execution_order": [
+        "D",
+        "C",
+        "B",
+        "A"
+      ],
+      "panel_id": "unbrowser-fixture-v2-single_page_extraction-medium-2026081002/replica=0",
+      "rollout_replica": 0,
+      "sampling_seed": 2026082003,
+      "task_id": "unbrowser-fixture-v2-single_page_extraction-medium-2026081002"
+    },
+    {
+      "execution_order": [
+        "D",
+        "C",
+        "A",
+        "B"
+      ],
+      "panel_id": "unbrowser-fixture-v2-table_filter_sort-easy-2026081004/replica=0",
+      "rollout_replica": 0,
+      "sampling_seed": 2026082007,
+      "task_id": "unbrowser-fixture-v2-table_filter_sort-easy-2026081004"
+    },
+    {
+      "execution_order": [
+        "D",
+        "B",
+        "C",
+        "A"
+      ],
+      "panel_id": "unbrowser-fixture-v2-multi_page_navigation-hard-2026081006/replica=0",
+      "rollout_replica": 0,
+      "sampling_seed": 2026082011,
+      "task_id": "unbrowser-fixture-v2-multi_page_navigation-hard-2026081006"
+    },
+    {
+      "execution_order": [
+        "D",
+        "B",
+        "A",
+        "C"
+      ],
+      "panel_id": "unbrowser-fixture-v2-search_filter_controls-medium-2026081008/replica=0",
+      "rollout_replica": 0,
+      "sampling_seed": 2026082015,
+      "task_id": "unbrowser-fixture-v2-search_filter_controls-medium-2026081008"
+    },
+    {
+      "execution_order": [
+        "D",
+        "A",
+        "C",
+        "B"
+      ],
+      "panel_id": "unbrowser-fixture-v2-form_entry_validation-easy-2026081010/replica=0",
+      "rollout_replica": 0,
+      "sampling_seed": 2026082019,
+      "task_id": "unbrowser-fixture-v2-form_entry_validation-easy-2026081010"
+    },
+    {
+      "execution_order": [
+        "D",
+        "A",
+        "B",
+        "C"
+      ],
+      "panel_id": "unbrowser-fixture-v2-distractor_recovery-hard-2026081012/replica=0",
+      "rollout_replica": 0,
+      "sampling_seed": 2026082023,
+      "task_id": "unbrowser-fixture-v2-distractor_recovery-hard-2026081012"
+    }
+  ],
+  "policy_labels": {
+    "A": "ub-direct-text_first-submit_directly-fail_fast-lean@2-7ad8d366",
+    "B": "ub-direct-structure_first-submit_directly-diagnose_retry_once-expanded@2-a18fd8c7",
+    "C": "ub-brief_plan-structure_first-final_reobserve-fail_fast-expanded@2-3d2c51ee",
+    "D": "ub-decompose-targeted_query_first-final_reobserve-diagnose_retry_once-lean@2-61413415"
+  },
+  "policy_split_file": "m3-unbrowser-policy-split.json",
+  "policy_split_manifest_hash": "b8853ae708b2e1943c2097ae546c47ad046a1a0c2769ccc55bba9a1b6510485f",
+  "registry_file": "m3-unbrowser-treatments.json",
+  "registry_hash": "2d3b6c3d956fed9d255782bef264f6333129e803fc6853b1fcebb4486a8a2d3f",
+  "runtime_pins": {
+    "bubblewrap_version": "bubblewrap 0.6.1",
+    "fixture_generator_version": "unbrowser-fixture-v2",
+    "fixture_verifier_id": "unbrowser-fixture-nonce",
+    "fixture_verifier_version": "2",
+    "llama_server_config": {
+      "ctx_size": 65536,
+      "flash_attention": "on",
+      "n_cpu_moe": 16,
+      "n_gpu_layers": "all",
+      "parallel": 1,
+      "reasoning": "on",
+      "threads": 8
+    },
+    "llama_server_path": "/usr/local/lib/ollama/llama-server",
+    "llama_server_required_args": [
+      "--alias gemma-4-26b-a4b",
+      "--ctx-size 65536",
+      "--flash-attn on",
+      "--n-cpu-moe 16",
+      "--n-gpu-layers all",
+      "--parallel 1",
+      "--reasoning on",
+      "--threads 8"
+    ],
+    "llama_server_sha256": "234b05b2138264f8fb263c3205e85f4c290e8afe5067e280a4f6f90cdac5696b",
+    "llama_server_version": "version: 1 (b4d6c7d8f)",
+    "model_alias": "gemma-4-26b-a4b",
+    "model_artifact": "gemma-4-26B-A4B-it-UD-IQ4_NL.gguf",
+    "model_artifact_path": "/home/zhimin90/llm_models/gemma-4-26B-A4B-it-UD-IQ4_NL.gguf",
+    "model_artifact_sha256": "eeb867f279ea5a3d52a0dc15fe8ada677b3328a328530957f3f9a5da93cb10b8",
+    "pi_cli_sha256": "840d1e8e689ed9e4937bcb00b9a810e02a8567d9afb10a47097f11ca93ea1521",
+    "pi_package": "@earendil-works/pi-coding-agent",
+    "pi_provider_config": {
+      "api": "openai-completions",
+      "base_url": "http://127.0.0.1:18081/v1",
+      "context_window": 65536,
+      "max_tokens": 8192,
+      "reasoning": false,
+      "sampling_params": null
+    },
+    "pi_version": "0.84.1",
+    "provider": "ubuntu-gemma",
+    "remote_provider_base_url": "http://127.0.0.1:8081/v1",
+    "rollout_replicas": 2,
+    "sampling": {
+      "parameters": {
+        "frequency_penalty": 0.0,
+        "min_p": 0.05,
+        "presence_penalty": 0.0,
+        "repeat_penalty": 1.0,
+        "temperature": 0.8,
+        "top_k": 40,
+        "top_p": 0.95
+      },
+      "seed_scope": "panel-common-across-policies"
+    },
+    "thinking": "off",
+    "unbrowser_path": "/home/zhimin90/Projects/pyreplab_bayesian_agent_harness/.tools/unbrowser-v0.0.19/unbrowser",
+    "unbrowser_sha256": "3c9b0b59ee2f7cdc04970db5ccd7fd17374ea1634a8a6d27dea3c0baec77f6c4",
+    "unbrowser_version": "0.0.19"
+  },
+  "schema_version": "m3-headroom-pilot-v1",
+  "selection": {
+    "eligible_split": "meta_train",
+    "factor_order": [
+      "planning",
+      "observation",
+      "verification",
+      "recovery",
+      "tool_cap"
+    ],
+    "minimum_pairwise_distance": 3,
+    "pairwise_hamming_distances": [
+      3,
+      4,
+      4,
+      3,
+      4,
+      4
+    ],
+    "tie_break": "uniform-fractional-over-selector-replica-winners",
+    "total_pairwise_distance": 22
+  },
+  "tasks": [
+    {
+      "difficulty": "easy",
+      "role": "T_pilot",
+      "seed": 2026081001,
+      "task_id": "unbrowser-fixture-v2-single_page_extraction-easy-2026081001",
+      "template": "single_page_extraction"
+    },
+    {
+      "difficulty": "medium",
+      "role": "T_pilot",
+      "seed": 2026081002,
+      "task_id": "unbrowser-fixture-v2-single_page_extraction-medium-2026081002",
+      "template": "single_page_extraction"
+    },
+    {
+      "difficulty": "hard",
+      "role": "T_pilot",
+      "seed": 2026081003,
+      "task_id": "unbrowser-fixture-v2-table_filter_sort-hard-2026081003",
+      "template": "table_filter_sort"
+    },
+    {
+      "difficulty": "easy",
+      "role": "T_pilot",
+      "seed": 2026081004,
+      "task_id": "unbrowser-fixture-v2-table_filter_sort-easy-2026081004",
+      "template": "table_filter_sort"
+    },
+    {
+      "difficulty": "medium",
+      "role": "T_pilot",
+      "seed": 2026081005,
+      "task_id": "unbrowser-fixture-v2-multi_page_navigation-medium-2026081005",
+      "template": "multi_page_navigation"
+    },
+    {
+      "difficulty": "hard",
+      "role": "T_pilot",
+      "seed": 2026081006,
+      "task_id": "unbrowser-fixture-v2-multi_page_navigation-hard-2026081006",
+      "template": "multi_page_navigation"
+    },
+    {
+      "difficulty": "easy",
+      "role": "T_pilot",
+      "seed": 2026081007,
+      "task_id": "unbrowser-fixture-v2-search_filter_controls-easy-2026081007",
+      "template": "search_filter_controls"
+    },
+    {
+      "difficulty": "medium",
+      "role": "T_pilot",
+      "seed": 2026081008,
+      "task_id": "unbrowser-fixture-v2-search_filter_controls-medium-2026081008",
+      "template": "search_filter_controls"
+    },
+    {
+      "difficulty": "hard",
+      "role": "T_pilot",
+      "seed": 2026081009,
+      "task_id": "unbrowser-fixture-v2-form_entry_validation-hard-2026081009",
+      "template": "form_entry_validation"
+    },
+    {
+      "difficulty": "easy",
+      "role": "T_pilot",
+      "seed": 2026081010,
+      "task_id": "unbrowser-fixture-v2-form_entry_validation-easy-2026081010",
+      "template": "form_entry_validation"
+    },
+    {
+      "difficulty": "medium",
+      "recovery_probe_status": 503,
+      "recovery_probe_url": "http://127.0.0.1:18090/distractor_recovery/2026081011/medium/page_0",
+      "role": "T_pilot",
+      "seed": 2026081011,
+      "task_id": "unbrowser-fixture-v2-distractor_recovery-medium-2026081011",
+      "template": "distractor_recovery"
+    },
+    {
+      "difficulty": "hard",
+      "recovery_probe_status": 503,
+      "recovery_probe_url": "http://127.0.0.1:18090/distractor_recovery/2026081012/hard/page_0",
+      "role": "T_pilot",
+      "seed": 2026081012,
+      "task_id": "unbrowser-fixture-v2-distractor_recovery-hard-2026081012",
+      "template": "distractor_recovery"
+    }
+  ]
+}

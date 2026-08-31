@@ -1,0 +1,57 @@
+{
+  "policy_bundle_ids": [
+    "ub-decompose-text_first-submit_directly-diagnose_retry_once-expanded@3-observation-enforced-08ffb871",
+    "ub-decompose-structure_first-submit_directly-diagnose_retry_once-expanded@3-observation-enforced-be2ac70a"
+  ],
+  "protocol": {
+    "claim_boundary": "screening_futility_only",
+    "decision_rule": {
+      "all_attempts_mechanically_valid": true
+    },
+    "mechanism": {
+      "combined_navigation_observation_tool_call": true,
+      "later_cross_modal_observations_allowed": true,
+      "name": "auto_delivered_first_observation",
+      "receipt_schema_version": "pyreplab-required-first-observation-v1",
+      "text_selector": "body"
+    },
+    "parent_bundle_ids": {
+      "structure_first": "ub-decompose-structure_first-submit_directly-diagnose_retry_once-expanded@2-e7e84c83",
+      "text_first": "ub-decompose-text_first-submit_directly-diagnose_retry_once-expanded@2-439044f8"
+    },
+    "schema_version": "m3-observation-canary-protocol-v1",
+    "stage": "mechanics_dry_run",
+    "task_selection": {
+      "outcome_use": "sacrificial_mechanics_only",
+      "seed_rule": "two fresh sequential seeds reserved before execution"
+    }
+  },
+  "purpose": "Validate first-observation auto-delivery, receipts, isolation, sampling identity, and hard-cap accounting before any outcome screen.",
+  "remote_identity": {
+    "host": "ubuntu-local",
+    "project": "/home/zhimin90/Projects/pyreplab_bayesian_agent_harness",
+    "python": "python3",
+    "run_root": "/home/zhimin90/Projects/pyreplab_bayesian_agent_harness/.runs/m3-observation-mechanics-20260811-v1"
+  },
+  "rollout_replicas": 1,
+  "sampling_seed_start": 1900001001,
+  "schedule_seed": 2026081101,
+  "screen_id": "m3-observation-mechanics-20260811-v1",
+  "selection": {
+    "boundary": "Engineering mechanics only; outcomes cannot advance or reject the treatment hypothesis.",
+    "source": "Fresh coordinates not present in repository or existing local run artifacts as of freeze."
+  },
+  "task_role": "T_canary",
+  "tasks": [
+    {
+      "difficulty": "easy",
+      "seed": 2026085901,
+      "template": "table_filter_sort"
+    },
+    {
+      "difficulty": "medium",
+      "seed": 2026085902,
+      "template": "search_filter_controls"
+    }
+  ]
+}

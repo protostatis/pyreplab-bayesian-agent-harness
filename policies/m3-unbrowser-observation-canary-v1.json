@@ -1,0 +1,65 @@
+{
+  "registry_hash": "8f54b33f54b469f133d84a7f5ec43b2b710783197382b639d4cc333de46eb216",
+  "treatments": [
+    {
+      "allowed_tools": [
+        "bash",
+        "unbrowser"
+      ],
+      "bundle_hash": "08ffb871c7ced62a11c94009d4badc19bd04e7d3e47efb196263b86f5bf24257",
+      "bundle_id": "ub-decompose-text_first-submit_directly-diagnose_retry_once-expanded@3-observation-enforced-08ffb871",
+      "command_timeout_seconds": 60,
+      "generator_metadata": {
+        "grammar_name": "unbrowser_interactive",
+        "grammar_size": 72,
+        "grammar_version": "m3-v2",
+        "index": 51,
+        "observation": "text_first",
+        "observation_mechanism": "auto_delivered_first_observation",
+        "observation_receipt_schema": "pyreplab-required-first-observation-v1",
+        "parent_bundle_id": "ub-decompose-text_first-submit_directly-diagnose_retry_once-expanded@2-439044f8",
+        "planning": "decompose",
+        "recovery": "diagnose_retry_once",
+        "tool_cap": "expanded",
+        "verification": "submit_directly"
+      },
+      "id": "ub-decompose-text_first-submit_directly-diagnose_retry_once-expanded",
+      "max_output_tokens": 4096,
+      "system_prompt": "Planning: Before the first tool call, emit at least two decomposition lines beginning 'STEP 1:' and 'STEP 2:'. Solve the steps independently, then combine the results.\n\nObservation: After navigate, the first successful observation must use the text action. Use text extraction before inspecting structure.\n\nVerification: Submit directly after obtaining the candidate answer. Do not repeat a read-only observation before writing result.json.\n\nRecovery: If a tool call fails, diagnose the problem and retry that tool once with a corrected approach before giving up.\n\n\n\n---\nSafety: Always work in the assigned task workspace. Do not modify system files or access locations outside the allowed URL set. Clean up any temporary state after completion.",
+      "tool_call_limit": 12,
+      "tool_interface": "native_bash_unbrowser_interactive_text_first_v1",
+      "version": "3-observation-enforced",
+      "wall_time_limit_seconds": 600
+    },
+    {
+      "allowed_tools": [
+        "bash",
+        "unbrowser"
+      ],
+      "bundle_hash": "be2ac70a0b5630e40b2b784060d33c6faefe45f16df9ccc89dad4c40a0f1ff60",
+      "bundle_id": "ub-decompose-structure_first-submit_directly-diagnose_retry_once-expanded@3-observation-enforced-be2ac70a",
+      "command_timeout_seconds": 60,
+      "generator_metadata": {
+        "grammar_name": "unbrowser_interactive",
+        "grammar_size": 72,
+        "grammar_version": "m3-v2",
+        "index": 59,
+        "observation": "structure_first",
+        "observation_mechanism": "auto_delivered_first_observation",
+        "observation_receipt_schema": "pyreplab-required-first-observation-v1",
+        "parent_bundle_id": "ub-decompose-structure_first-submit_directly-diagnose_retry_once-expanded@2-e7e84c83",
+        "planning": "decompose",
+        "recovery": "diagnose_retry_once",
+        "tool_cap": "expanded",
+        "verification": "submit_directly"
+      },
+      "id": "ub-decompose-structure_first-submit_directly-diagnose_retry_once-expanded",
+      "max_output_tokens": 4096,
+      "system_prompt": "Planning: Before the first tool call, emit at least two decomposition lines beginning 'STEP 1:' and 'STEP 2:'. Solve the steps independently, then combine the results.\n\nObservation: After navigate, the first successful observation must use the blockmap action. Inspect structure before extracting text.\n\nVerification: Submit directly after obtaining the candidate answer. Do not repeat a read-only observation before writing result.json.\n\nRecovery: If a tool call fails, diagnose the problem and retry that tool once with a corrected approach before giving up.\n\n\n\n---\nSafety: Always work in the assigned task workspace. Do not modify system files or access locations outside the allowed URL set. Clean up any temporary state after completion.",
+      "tool_call_limit": 12,
+      "tool_interface": "native_bash_unbrowser_interactive_structure_first_v1",
+      "version": "3-observation-enforced",
+      "wall_time_limit_seconds": 600
+    }
+  ]
+}

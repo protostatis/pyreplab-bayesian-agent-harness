@@ -1,0 +1,1949 @@
+{
+  "registry_hash": "2d3b6c3d956fed9d255782bef264f6333129e803fc6853b1fcebb4486a8a2d3f",
+  "treatments": [
+    {
+      "allowed_tools": [
+        "bash",
+        "unbrowser"
+      ],
+      "bundle_hash": "7ad8d3667a55006e37d08edee8cedf545ce13a218b2faba872f7dd6c1421bb86",
+      "bundle_id": "ub-direct-text_first-submit_directly-fail_fast-lean@2-7ad8d366",
+      "command_timeout_seconds": 60,
+      "generator_metadata": {
+        "grammar_name": "unbrowser_interactive",
+        "grammar_size": 72,
+        "grammar_version": "m3-v2",
+        "index": 0,
+        "observation": "text_first",
+        "planning": "direct",
+        "recovery": "fail_fast",
+        "tool_cap": "lean",
+        "verification": "submit_directly"
+      },
+      "id": "ub-direct-text_first-submit_directly-fail_fast-lean",
+      "max_output_tokens": 4096,
+      "system_prompt": "Planning: Solve the task directly without pre-planning. Do not emit any planning text before the first tool call; start with the tool immediately.\n\nObservation: After navigate, the first successful observation must use the text action. Use text extraction before inspecting structure.\n\nVerification: Submit directly after obtaining the candidate answer. Do not repeat a read-only observation before writing result.json.\n\nRecovery: If a tool call fails or returns no useful information, make no further tool calls; stop and report the failure.\n\n\n\n---\nSafety: Always work in the assigned task workspace. Do not modify system files or access locations outside the allowed URL set. Clean up any temporary state after completion.",
+      "tool_call_limit": 6,
+      "tool_interface": "native_bash_unbrowser_interactive_v1",
+      "version": "2",
+      "wall_time_limit_seconds": 600
+    },
+    {
+      "allowed_tools": [
+        "bash",
+        "unbrowser"
+      ],
+      "bundle_hash": "0800b352b923eacbf3f4c2bec360d360d7b9f3d5bd90ca135d9ff89d36b95a97",
+      "bundle_id": "ub-direct-text_first-submit_directly-fail_fast-expanded@2-0800b352",
+      "command_timeout_seconds": 60,
+      "generator_metadata": {
+        "grammar_name": "unbrowser_interactive",
+        "grammar_size": 72,
+        "grammar_version": "m3-v2",
+        "index": 1,
+        "observation": "text_first",
+        "planning": "direct",
+        "recovery": "fail_fast",
+        "tool_cap": "expanded",
+        "verification": "submit_directly"
+      },
+      "id": "ub-direct-text_first-submit_directly-fail_fast-expanded",
+      "max_output_tokens": 4096,
+      "system_prompt": "Planning: Solve the task directly without pre-planning. Do not emit any planning text before the first tool call; start with the tool immediately.\n\nObservation: After navigate, the first successful observation must use the text action. Use text extraction before inspecting structure.\n\nVerification: Submit directly after obtaining the candidate answer. Do not repeat a read-only observation before writing result.json.\n\nRecovery: If a tool call fails or returns no useful information, make no further tool calls; stop and report the failure.\n\n\n\n---\nSafety: Always work in the assigned task workspace. Do not modify system files or access locations outside the allowed URL set. Clean up any temporary state after completion.",
+      "tool_call_limit": 12,
+      "tool_interface": "native_bash_unbrowser_interactive_v1",
+      "version": "2",
+      "wall_time_limit_seconds": 600
+    },
+    {
+      "allowed_tools": [
+        "bash",
+        "unbrowser"
+      ],
+      "bundle_hash": "b153007be00a160f08a61853e59283a883b4decc04e8af4579518d57677c37c2",
+      "bundle_id": "ub-direct-text_first-submit_directly-diagnose_retry_once-lean@2-b153007b",
+      "command_timeout_seconds": 60,
+      "generator_metadata": {
+        "grammar_name": "unbrowser_interactive",
+        "grammar_size": 72,
+        "grammar_version": "m3-v2",
+        "index": 2,
+        "observation": "text_first",
+        "planning": "direct",
+        "recovery": "diagnose_retry_once",
+        "tool_cap": "lean",
+        "verification": "submit_directly"
+      },
+      "id": "ub-direct-text_first-submit_directly-diagnose_retry_once-lean",
+      "max_output_tokens": 4096,
+      "system_prompt": "Planning: Solve the task directly without pre-planning. Do not emit any planning text before the first tool call; start with the tool immediately.\n\nObservation: After navigate, the first successful observation must use the text action. Use text extraction before inspecting structure.\n\nVerification: Submit directly after obtaining the candidate answer. Do not repeat a read-only observation before writing result.json.\n\nRecovery: If a tool call fails, diagnose the problem and retry that tool once with a corrected approach before giving up.\n\n\n\n---\nSafety: Always work in the assigned task workspace. Do not modify system files or access locations outside the allowed URL set. Clean up any temporary state after completion.",
+      "tool_call_limit": 6,
+      "tool_interface": "native_bash_unbrowser_interactive_v1",
+      "version": "2",
+      "wall_time_limit_seconds": 600
+    },
+    {
+      "allowed_tools": [
+        "bash",
+        "unbrowser"
+      ],
+      "bundle_hash": "d8af0d9d9778a6e381925b2d1accac286782fc5b009142ee23381caafbfacbe6",
+      "bundle_id": "ub-direct-text_first-submit_directly-diagnose_retry_once-expanded@2-d8af0d9d",
+      "command_timeout_seconds": 60,
+      "generator_metadata": {
+        "grammar_name": "unbrowser_interactive",
+        "grammar_size": 72,
+        "grammar_version": "m3-v2",
+        "index": 3,
+        "observation": "text_first",
+        "planning": "direct",
+        "recovery": "diagnose_retry_once",
+        "tool_cap": "expanded",
+        "verification": "submit_directly"
+      },
+      "id": "ub-direct-text_first-submit_directly-diagnose_retry_once-expanded",
+      "max_output_tokens": 4096,
+      "system_prompt": "Planning: Solve the task directly without pre-planning. Do not emit any planning text before the first tool call; start with the tool immediately.\n\nObservation: After navigate, the first successful observation must use the text action. Use text extraction before inspecting structure.\n\nVerification: Submit directly after obtaining the candidate answer. Do not repeat a read-only observation before writing result.json.\n\nRecovery: If a tool call fails, diagnose the problem and retry that tool once with a corrected approach before giving up.\n\n\n\n---\nSafety: Always work in the assigned task workspace. Do not modify system files or access locations outside the allowed URL set. Clean up any temporary state after completion.",
+      "tool_call_limit": 12,
+      "tool_interface": "native_bash_unbrowser_interactive_v1",
+      "version": "2",
+      "wall_time_limit_seconds": 600
+    },
+    {
+      "allowed_tools": [
+        "bash",
+        "unbrowser"
+      ],
+      "bundle_hash": "391cbfc161111b0ce39406c38e422e5f9ede60871e4efd7d68b3133cd99f41f7",
+      "bundle_id": "ub-direct-text_first-final_reobserve-fail_fast-lean@2-391cbfc1",
+      "command_timeout_seconds": 60,
+      "generator_metadata": {
+        "grammar_name": "unbrowser_interactive",
+        "grammar_size": 72,
+        "grammar_version": "m3-v2",
+        "index": 4,
+        "observation": "text_first",
+        "planning": "direct",
+        "recovery": "fail_fast",
+        "tool_cap": "lean",
+        "verification": "final_reobserve"
+      },
+      "id": "ub-direct-text_first-final_reobserve-fail_fast-lean",
+      "max_output_tokens": 4096,
+      "system_prompt": "Planning: Solve the task directly without pre-planning. Do not emit any planning text before the first tool call; start with the tool immediately.\n\nObservation: After navigate, the first successful observation must use the text action. Use text extraction before inspecting structure.\n\nVerification: After obtaining the candidate answer and before writing result.json, repeat a relevant read-only observation to confirm it.\n\nRecovery: If a tool call fails or returns no useful information, make no further tool calls; stop and report the failure.\n\n\n\n---\nSafety: Always work in the assigned task workspace. Do not modify system files or access locations outside the allowed URL set. Clean up any temporary state after completion.",
+      "tool_call_limit": 6,
+      "tool_interface": "native_bash_unbrowser_interactive_v1",
+      "version": "2",
+      "wall_time_limit_seconds": 600
+    },
+    {
+      "allowed_tools": [
+        "bash",
+        "unbrowser"
+      ],
+      "bundle_hash": "e389d9a287ad46e8996580428e073304536a95f4862e727081de08b4a89fe34e",
+      "bundle_id": "ub-direct-text_first-final_reobserve-fail_fast-expanded@2-e389d9a2",
+      "command_timeout_seconds": 60,
+      "generator_metadata": {
+        "grammar_name": "unbrowser_interactive",
+        "grammar_size": 72,
+        "grammar_version": "m3-v2",
+        "index": 5,
+        "observation": "text_first",
+        "planning": "direct",
+        "recovery": "fail_fast",
+        "tool_cap": "expanded",
+        "verification": "final_reobserve"
+      },
+      "id": "ub-direct-text_first-final_reobserve-fail_fast-expanded",
+      "max_output_tokens": 4096,
+      "system_prompt": "Planning: Solve the task directly without pre-planning. Do not emit any planning text before the first tool call; start with the tool immediately.\n\nObservation: After navigate, the first successful observation must use the text action. Use text extraction before inspecting structure.\n\nVerification: After obtaining the candidate answer and before writing result.json, repeat a relevant read-only observation to confirm it.\n\nRecovery: If a tool call fails or returns no useful information, make no further tool calls; stop and report the failure.\n\n\n\n---\nSafety: Always work in the assigned task workspace. Do not modify system files or access locations outside the allowed URL set. Clean up any temporary state after completion.",
+      "tool_call_limit": 12,
+      "tool_interface": "native_bash_unbrowser_interactive_v1",
+      "version": "2",
+      "wall_time_limit_seconds": 600
+    },
+    {
+      "allowed_tools": [
+        "bash",
+        "unbrowser"
+      ],
+      "bundle_hash": "ca7446e6048940d531b28fc5b9eb40be0a84808011d5c1e80af25adddcfd6d7d",
+      "bundle_id": "ub-direct-text_first-final_reobserve-diagnose_retry_once-lean@2-ca7446e6",
+      "command_timeout_seconds": 60,
+      "generator_metadata": {
+        "grammar_name": "unbrowser_interactive",
+        "grammar_size": 72,
+        "grammar_version": "m3-v2",
+        "index": 6,
+        "observation": "text_first",
+        "planning": "direct",
+        "recovery": "diagnose_retry_once",
+        "tool_cap": "lean",
+        "verification": "final_reobserve"
+      },
+      "id": "ub-direct-text_first-final_reobserve-diagnose_retry_once-lean",
+      "max_output_tokens": 4096,
+      "system_prompt": "Planning: Solve the task directly without pre-planning. Do not emit any planning text before the first tool call; start with the tool immediately.\n\nObservation: After navigate, the first successful observation must use the text action. Use text extraction before inspecting structure.\n\nVerification: After obtaining the candidate answer and before writing result.json, repeat a relevant read-only observation to confirm it.\n\nRecovery: If a tool call fails, diagnose the problem and retry that tool once with a corrected approach before giving up.\n\n\n\n---\nSafety: Always work in the assigned task workspace. Do not modify system files or access locations outside the allowed URL set. Clean up any temporary state after completion.",
+      "tool_call_limit": 6,
+      "tool_interface": "native_bash_unbrowser_interactive_v1",
+      "version": "2",
+      "wall_time_limit_seconds": 600
+    },
+    {
+      "allowed_tools": [
+        "bash",
+        "unbrowser"
+      ],
+      "bundle_hash": "f7b623cc1f125862396f86c3690cbefde9ddaac50a2bf248bce98a44c682c9c8",
+      "bundle_id": "ub-direct-text_first-final_reobserve-diagnose_retry_once-expanded@2-f7b623cc",
+      "command_timeout_seconds": 60,
+      "generator_metadata": {
+        "grammar_name": "unbrowser_interactive",
+        "grammar_size": 72,
+        "grammar_version": "m3-v2",
+        "index": 7,
+        "observation": "text_first",
+        "planning": "direct",
+        "recovery": "diagnose_retry_once",
+        "tool_cap": "expanded",
+        "verification": "final_reobserve"
+      },
+      "id": "ub-direct-text_first-final_reobserve-diagnose_retry_once-expanded",
+      "max_output_tokens": 4096,
+      "system_prompt": "Planning: Solve the task directly without pre-planning. Do not emit any planning text before the first tool call; start with the tool immediately.\n\nObservation: After navigate, the first successful observation must use the text action. Use text extraction before inspecting structure.\n\nVerification: After obtaining the candidate answer and before writing result.json, repeat a relevant read-only observation to confirm it.\n\nRecovery: If a tool call fails, diagnose the problem and retry that tool once with a corrected approach before giving up.\n\n\n\n---\nSafety: Always work in the assigned task workspace. Do not modify system files or access locations outside the allowed URL set. Clean up any temporary state after completion.",
+      "tool_call_limit": 12,
+      "tool_interface": "native_bash_unbrowser_interactive_v1",
+      "version": "2",
+      "wall_time_limit_seconds": 600
+    },
+    {
+      "allowed_tools": [
+        "bash",
+        "unbrowser"
+      ],
+      "bundle_hash": "cd64c5d2aa3bfc6142c4aecc2a194963a59d01dcff16c265f3cc2a0feed18706",
+      "bundle_id": "ub-direct-structure_first-submit_directly-fail_fast-lean@2-cd64c5d2",
+      "command_timeout_seconds": 60,
+      "generator_metadata": {
+        "grammar_name": "unbrowser_interactive",
+        "grammar_size": 72,
+        "grammar_version": "m3-v2",
+        "index": 8,
+        "observation": "structure_first",
+        "planning": "direct",
+        "recovery": "fail_fast",
+        "tool_cap": "lean",
+        "verification": "submit_directly"
+      },
+      "id": "ub-direct-structure_first-submit_directly-fail_fast-lean",
+      "max_output_tokens": 4096,
+      "system_prompt": "Planning: Solve the task directly without pre-planning. Do not emit any planning text before the first tool call; start with the tool immediately.\n\nObservation: After navigate, the first successful observation must use the blockmap action. Inspect structure before extracting text.\n\nVerification: Submit directly after obtaining the candidate answer. Do not repeat a read-only observation before writing result.json.\n\nRecovery: If a tool call fails or returns no useful information, make no further tool calls; stop and report the failure.\n\n\n\n---\nSafety: Always work in the assigned task workspace. Do not modify system files or access locations outside the allowed URL set. Clean up any temporary state after completion.",
+      "tool_call_limit": 6,
+      "tool_interface": "native_bash_unbrowser_interactive_v1",
+      "version": "2",
+      "wall_time_limit_seconds": 600
+    },
+    {
+      "allowed_tools": [
+        "bash",
+        "unbrowser"
+      ],
+      "bundle_hash": "2905362ff15284b2d3ed18a2ac17c90d013830c998869731789d1a41184add88",
+      "bundle_id": "ub-direct-structure_first-submit_directly-fail_fast-expanded@2-2905362f",
+      "command_timeout_seconds": 60,
+      "generator_metadata": {
+        "grammar_name": "unbrowser_interactive",
+        "grammar_size": 72,
+        "grammar_version": "m3-v2",
+        "index": 9,
+        "observation": "structure_first",
+        "planning": "direct",
+        "recovery": "fail_fast",
+        "tool_cap": "expanded",
+        "verification": "submit_directly"
+      },
+      "id": "ub-direct-structure_first-submit_directly-fail_fast-expanded",
+      "max_output_tokens": 4096,
+      "system_prompt": "Planning: Solve the task directly without pre-planning. Do not emit any planning text before the first tool call; start with the tool immediately.\n\nObservation: After navigate, the first successful observation must use the blockmap action. Inspect structure before extracting text.\n\nVerification: Submit directly after obtaining the candidate answer. Do not repeat a read-only observation before writing result.json.\n\nRecovery: If a tool call fails or returns no useful information, make no further tool calls; stop and report the failure.\n\n\n\n---\nSafety: Always work in the assigned task workspace. Do not modify system files or access locations outside the allowed URL set. Clean up any temporary state after completion.",
+      "tool_call_limit": 12,
+      "tool_interface": "native_bash_unbrowser_interactive_v1",
+      "version": "2",
+      "wall_time_limit_seconds": 600
+    },
+    {
+      "allowed_tools": [
+        "bash",
+        "unbrowser"
+      ],
+      "bundle_hash": "37aa7f4bd1da41b36b749c12e136cc084b0c70f54042dd4030b5bd7dd4a77bbe",
+      "bundle_id": "ub-direct-structure_first-submit_directly-diagnose_retry_once-lean@2-37aa7f4b",
+      "command_timeout_seconds": 60,
+      "generator_metadata": {
+        "grammar_name": "unbrowser_interactive",
+        "grammar_size": 72,
+        "grammar_version": "m3-v2",
+        "index": 10,
+        "observation": "structure_first",
+        "planning": "direct",
+        "recovery": "diagnose_retry_once",
+        "tool_cap": "lean",
+        "verification": "submit_directly"
+      },
+      "id": "ub-direct-structure_first-submit_directly-diagnose_retry_once-lean",
+      "max_output_tokens": 4096,
+      "system_prompt": "Planning: Solve the task directly without pre-planning. Do not emit any planning text before the first tool call; start with the tool immediately.\n\nObservation: After navigate, the first successful observation must use the blockmap action. Inspect structure before extracting text.\n\nVerification: Submit directly after obtaining the candidate answer. Do not repeat a read-only observation before writing result.json.\n\nRecovery: If a tool call fails, diagnose the problem and retry that tool once with a corrected approach before giving up.\n\n\n\n---\nSafety: Always work in the assigned task workspace. Do not modify system files or access locations outside the allowed URL set. Clean up any temporary state after completion.",
+      "tool_call_limit": 6,
+      "tool_interface": "native_bash_unbrowser_interactive_v1",
+      "version": "2",
+      "wall_time_limit_seconds": 600
+    },
+    {
+      "allowed_tools": [
+        "bash",
+        "unbrowser"
+      ],
+      "bundle_hash": "a18fd8c78bbbb7c11eb60271280504da20a42d09fee6075aeb9dcebb95ed8487",
+      "bundle_id": "ub-direct-structure_first-submit_directly-diagnose_retry_once-expanded@2-a18fd8c7",
+      "command_timeout_seconds": 60,
+      "generator_metadata": {
+        "grammar_name": "unbrowser_interactive",
+        "grammar_size": 72,
+        "grammar_version": "m3-v2",
+        "index": 11,
+        "observation": "structure_first",
+        "planning": "direct",
+        "recovery": "diagnose_retry_once",
+        "tool_cap": "expanded",
+        "verification": "submit_directly"
+      },
+      "id": "ub-direct-structure_first-submit_directly-diagnose_retry_once-expanded",
+      "max_output_tokens": 4096,
+      "system_prompt": "Planning: Solve the task directly without pre-planning. Do not emit any planning text before the first tool call; start with the tool immediately.\n\nObservation: After navigate, the first successful observation must use the blockmap action. Inspect structure before extracting text.\n\nVerification: Submit directly after obtaining the candidate answer. Do not repeat a read-only observation before writing result.json.\n\nRecovery: If a tool call fails, diagnose the problem and retry that tool once with a corrected approach before giving up.\n\n\n\n---\nSafety: Always work in the assigned task workspace. Do not modify system files or access locations outside the allowed URL set. Clean up any temporary state after completion.",
+      "tool_call_limit": 12,
+      "tool_interface": "native_bash_unbrowser_interactive_v1",
+      "version": "2",
+      "wall_time_limit_seconds": 600
+    },
+    {
+      "allowed_tools": [
+        "bash",
+        "unbrowser"
+      ],
+      "bundle_hash": "cfec5c8128ffbb7e81ff7c960654da1bf65badb3ce2039634fc48c8565089752",
+      "bundle_id": "ub-direct-structure_first-final_reobserve-fail_fast-lean@2-cfec5c81",
+      "command_timeout_seconds": 60,
+      "generator_metadata": {
+        "grammar_name": "unbrowser_interactive",
+        "grammar_size": 72,
+        "grammar_version": "m3-v2",
+        "index": 12,
+        "observation": "structure_first",
+        "planning": "direct",
+        "recovery": "fail_fast",
+        "tool_cap": "lean",
+        "verification": "final_reobserve"
+      },
+      "id": "ub-direct-structure_first-final_reobserve-fail_fast-lean",
+      "max_output_tokens": 4096,
+      "system_prompt": "Planning: Solve the task directly without pre-planning. Do not emit any planning text before the first tool call; start with the tool immediately.\n\nObservation: After navigate, the first successful observation must use the blockmap action. Inspect structure before extracting text.\n\nVerification: After obtaining the candidate answer and before writing result.json, repeat a relevant read-only observation to confirm it.\n\nRecovery: If a tool call fails or returns no useful information, make no further tool calls; stop and report the failure.\n\n\n\n---\nSafety: Always work in the assigned task workspace. Do not modify system files or access locations outside the allowed URL set. Clean up any temporary state after completion.",
+      "tool_call_limit": 6,
+      "tool_interface": "native_bash_unbrowser_interactive_v1",
+      "version": "2",
+      "wall_time_limit_seconds": 600
+    },
+    {
+      "allowed_tools": [
+        "bash",
+        "unbrowser"
+      ],
+      "bundle_hash": "792fd008ea1334d6d85d476e8e9d50b2b11caa6665d6f306a5f3f5db0aca7901",
+      "bundle_id": "ub-direct-structure_first-final_reobserve-fail_fast-expanded@2-792fd008",
+      "command_timeout_seconds": 60,
+      "generator_metadata": {
+        "grammar_name": "unbrowser_interactive",
+        "grammar_size": 72,
+        "grammar_version": "m3-v2",
+        "index": 13,
+        "observation": "structure_first",
+        "planning": "direct",
+        "recovery": "fail_fast",
+        "tool_cap": "expanded",
+        "verification": "final_reobserve"
+      },
+      "id": "ub-direct-structure_first-final_reobserve-fail_fast-expanded",
+      "max_output_tokens": 4096,
+      "system_prompt": "Planning: Solve the task directly without pre-planning. Do not emit any planning text before the first tool call; start with the tool immediately.\n\nObservation: After navigate, the first successful observation must use the blockmap action. Inspect structure before extracting text.\n\nVerification: After obtaining the candidate answer and before writing result.json, repeat a relevant read-only observation to confirm it.\n\nRecovery: If a tool call fails or returns no useful information, make no further tool calls; stop and report the failure.\n\n\n\n---\nSafety: Always work in the assigned task workspace. Do not modify system files or access locations outside the allowed URL set. Clean up any temporary state after completion.",
+      "tool_call_limit": 12,
+      "tool_interface": "native_bash_unbrowser_interactive_v1",
+      "version": "2",
+      "wall_time_limit_seconds": 600
+    },
+    {
+      "allowed_tools": [
+        "bash",
+        "unbrowser"
+      ],
+      "bundle_hash": "ee55a7a8cc36e1355e9b3a9260bcb8645d1a25e13ea0304528fc62b8e48a7f17",
+      "bundle_id": "ub-direct-structure_first-final_reobserve-diagnose_retry_once-lean@2-ee55a7a8",
+      "command_timeout_seconds": 60,
+      "generator_metadata": {
+        "grammar_name": "unbrowser_interactive",
+        "grammar_size": 72,
+        "grammar_version": "m3-v2",
+        "index": 14,
+        "observation": "structure_first",
+        "planning": "direct",
+        "recovery": "diagnose_retry_once",
+        "tool_cap": "lean",
+        "verification": "final_reobserve"
+      },
+      "id": "ub-direct-structure_first-final_reobserve-diagnose_retry_once-lean",
+      "max_output_tokens": 4096,
+      "system_prompt": "Planning: Solve the task directly without pre-planning. Do not emit any planning text before the first tool call; start with the tool immediately.\n\nObservation: After navigate, the first successful observation must use the blockmap action. Inspect structure before extracting text.\n\nVerification: After obtaining the candidate answer and before writing result.json, repeat a relevant read-only observation to confirm it.\n\nRecovery: If a tool call fails, diagnose the problem and retry that tool once with a corrected approach before giving up.\n\n\n\n---\nSafety: Always work in the assigned task workspace. Do not modify system files or access locations outside the allowed URL set. Clean up any temporary state after completion.",
+      "tool_call_limit": 6,
+      "tool_interface": "native_bash_unbrowser_interactive_v1",
+      "version": "2",
+      "wall_time_limit_seconds": 600
+    },
+    {
+      "allowed_tools": [
+        "bash",
+        "unbrowser"
+      ],
+      "bundle_hash": "12c92d81b1944a3e3206688bbdd27e100fe084fcae03b26672ba53257f363c11",
+      "bundle_id": "ub-direct-structure_first-final_reobserve-diagnose_retry_once-expanded@2-12c92d81",
+      "command_timeout_seconds": 60,
+      "generator_metadata": {
+        "grammar_name": "unbrowser_interactive",
+        "grammar_size": 72,
+        "grammar_version": "m3-v2",
+        "index": 15,
+        "observation": "structure_first",
+        "planning": "direct",
+        "recovery": "diagnose_retry_once",
+        "tool_cap": "expanded",
+        "verification": "final_reobserve"
+      },
+      "id": "ub-direct-structure_first-final_reobserve-diagnose_retry_once-expanded",
+      "max_output_tokens": 4096,
+      "system_prompt": "Planning: Solve the task directly without pre-planning. Do not emit any planning text before the first tool call; start with the tool immediately.\n\nObservation: After navigate, the first successful observation must use the blockmap action. Inspect structure before extracting text.\n\nVerification: After obtaining the candidate answer and before writing result.json, repeat a relevant read-only observation to confirm it.\n\nRecovery: If a tool call fails, diagnose the problem and retry that tool once with a corrected approach before giving up.\n\n\n\n---\nSafety: Always work in the assigned task workspace. Do not modify system files or access locations outside the allowed URL set. Clean up any temporary state after completion.",
+      "tool_call_limit": 12,
+      "tool_interface": "native_bash_unbrowser_interactive_v1",
+      "version": "2",
+      "wall_time_limit_seconds": 600
+    },
+    {
+      "allowed_tools": [
+        "bash",
+        "unbrowser"
+      ],
+      "bundle_hash": "9422327c7ca7f2c80b74bdcbd290ab221523395625efd5921df62dae68545c0a",
+      "bundle_id": "ub-direct-targeted_query_first-submit_directly-fail_fast-lean@2-9422327c",
+      "command_timeout_seconds": 60,
+      "generator_metadata": {
+        "grammar_name": "unbrowser_interactive",
+        "grammar_size": 72,
+        "grammar_version": "m3-v2",
+        "index": 16,
+        "observation": "targeted_query_first",
+        "planning": "direct",
+        "recovery": "fail_fast",
+        "tool_cap": "lean",
+        "verification": "submit_directly"
+      },
+      "id": "ub-direct-targeted_query_first-submit_directly-fail_fast-lean",
+      "max_output_tokens": 4096,
+      "system_prompt": "Planning: Solve the task directly without pre-planning. Do not emit any planning text before the first tool call; start with the tool immediately.\n\nObservation: After navigate, the first successful observation must use the query action with a targeted selector. Locate specific information first.\n\nVerification: Submit directly after obtaining the candidate answer. Do not repeat a read-only observation before writing result.json.\n\nRecovery: If a tool call fails or returns no useful information, make no further tool calls; stop and report the failure.\n\n\n\n---\nSafety: Always work in the assigned task workspace. Do not modify system files or access locations outside the allowed URL set. Clean up any temporary state after completion.",
+      "tool_call_limit": 6,
+      "tool_interface": "native_bash_unbrowser_interactive_v1",
+      "version": "2",
+      "wall_time_limit_seconds": 600
+    },
+    {
+      "allowed_tools": [
+        "bash",
+        "unbrowser"
+      ],
+      "bundle_hash": "429b5046680a9deb3aa5759aa1559cf2cd3cd183fe23dd18b851e5c4182a7137",
+      "bundle_id": "ub-direct-targeted_query_first-submit_directly-fail_fast-expanded@2-429b5046",
+      "command_timeout_seconds": 60,
+      "generator_metadata": {
+        "grammar_name": "unbrowser_interactive",
+        "grammar_size": 72,
+        "grammar_version": "m3-v2",
+        "index": 17,
+        "observation": "targeted_query_first",
+        "planning": "direct",
+        "recovery": "fail_fast",
+        "tool_cap": "expanded",
+        "verification": "submit_directly"
+      },
+      "id": "ub-direct-targeted_query_first-submit_directly-fail_fast-expanded",
+      "max_output_tokens": 4096,
+      "system_prompt": "Planning: Solve the task directly without pre-planning. Do not emit any planning text before the first tool call; start with the tool immediately.\n\nObservation: After navigate, the first successful observation must use the query action with a targeted selector. Locate specific information first.\n\nVerification: Submit directly after obtaining the candidate answer. Do not repeat a read-only observation before writing result.json.\n\nRecovery: If a tool call fails or returns no useful information, make no further tool calls; stop and report the failure.\n\n\n\n---\nSafety: Always work in the assigned task workspace. Do not modify system files or access locations outside the allowed URL set. Clean up any temporary state after completion.",
+      "tool_call_limit": 12,
+      "tool_interface": "native_bash_unbrowser_interactive_v1",
+      "version": "2",
+      "wall_time_limit_seconds": 600
+    },
+    {
+      "allowed_tools": [
+        "bash",
+        "unbrowser"
+      ],
+      "bundle_hash": "a7f08892a31491c7f165f9c1740cfe451c10c7b347ed2c3fc446642123c53a89",
+      "bundle_id": "ub-direct-targeted_query_first-submit_directly-diagnose_retry_once-lean@2-a7f08892",
+      "command_timeout_seconds": 60,
+      "generator_metadata": {
+        "grammar_name": "unbrowser_interactive",
+        "grammar_size": 72,
+        "grammar_version": "m3-v2",
+        "index": 18,
+        "observation": "targeted_query_first",
+        "planning": "direct",
+        "recovery": "diagnose_retry_once",
+        "tool_cap": "lean",
+        "verification": "submit_directly"
+      },
+      "id": "ub-direct-targeted_query_first-submit_directly-diagnose_retry_once-lean",
+      "max_output_tokens": 4096,
+      "system_prompt": "Planning: Solve the task directly without pre-planning. Do not emit any planning text before the first tool call; start with the tool immediately.\n\nObservation: After navigate, the first successful observation must use the query action with a targeted selector. Locate specific information first.\n\nVerification: Submit directly after obtaining the candidate answer. Do not repeat a read-only observation before writing result.json.\n\nRecovery: If a tool call fails, diagnose the problem and retry that tool once with a corrected approach before giving up.\n\n\n\n---\nSafety: Always work in the assigned task workspace. Do not modify system files or access locations outside the allowed URL set. Clean up any temporary state after completion.",
+      "tool_call_limit": 6,
+      "tool_interface": "native_bash_unbrowser_interactive_v1",
+      "version": "2",
+      "wall_time_limit_seconds": 600
+    },
+    {
+      "allowed_tools": [
+        "bash",
+        "unbrowser"
+      ],
+      "bundle_hash": "95c702718b9ae612762f9cb2892b84303032e4c2f5cdafeee378acd12c12424f",
+      "bundle_id": "ub-direct-targeted_query_first-submit_directly-diagnose_retry_once-expanded@2-95c70271",
+      "command_timeout_seconds": 60,
+      "generator_metadata": {
+        "grammar_name": "unbrowser_interactive",
+        "grammar_size": 72,
+        "grammar_version": "m3-v2",
+        "index": 19,
+        "observation": "targeted_query_first",
+        "planning": "direct",
+        "recovery": "diagnose_retry_once",
+        "tool_cap": "expanded",
+        "verification": "submit_directly"
+      },
+      "id": "ub-direct-targeted_query_first-submit_directly-diagnose_retry_once-expanded",
+      "max_output_tokens": 4096,
+      "system_prompt": "Planning: Solve the task directly without pre-planning. Do not emit any planning text before the first tool call; start with the tool immediately.\n\nObservation: After navigate, the first successful observation must use the query action with a targeted selector. Locate specific information first.\n\nVerification: Submit directly after obtaining the candidate answer. Do not repeat a read-only observation before writing result.json.\n\nRecovery: If a tool call fails, diagnose the problem and retry that tool once with a corrected approach before giving up.\n\n\n\n---\nSafety: Always work in the assigned task workspace. Do not modify system files or access locations outside the allowed URL set. Clean up any temporary state after completion.",
+      "tool_call_limit": 12,
+      "tool_interface": "native_bash_unbrowser_interactive_v1",
+      "version": "2",
+      "wall_time_limit_seconds": 600
+    },
+    {
+      "allowed_tools": [
+        "bash",
+        "unbrowser"
+      ],
+      "bundle_hash": "8ee32b4c4c1e475d1e8e4030253594d781a80383da7ba5fdeabc258cb7dc1e2d",
+      "bundle_id": "ub-direct-targeted_query_first-final_reobserve-fail_fast-lean@2-8ee32b4c",
+      "command_timeout_seconds": 60,
+      "generator_metadata": {
+        "grammar_name": "unbrowser_interactive",
+        "grammar_size": 72,
+        "grammar_version": "m3-v2",
+        "index": 20,
+        "observation": "targeted_query_first",
+        "planning": "direct",
+        "recovery": "fail_fast",
+        "tool_cap": "lean",
+        "verification": "final_reobserve"
+      },
+      "id": "ub-direct-targeted_query_first-final_reobserve-fail_fast-lean",
+      "max_output_tokens": 4096,
+      "system_prompt": "Planning: Solve the task directly without pre-planning. Do not emit any planning text before the first tool call; start with the tool immediately.\n\nObservation: After navigate, the first successful observation must use the query action with a targeted selector. Locate specific information first.\n\nVerification: After obtaining the candidate answer and before writing result.json, repeat a relevant read-only observation to confirm it.\n\nRecovery: If a tool call fails or returns no useful information, make no further tool calls; stop and report the failure.\n\n\n\n---\nSafety: Always work in the assigned task workspace. Do not modify system files or access locations outside the allowed URL set. Clean up any temporary state after completion.",
+      "tool_call_limit": 6,
+      "tool_interface": "native_bash_unbrowser_interactive_v1",
+      "version": "2",
+      "wall_time_limit_seconds": 600
+    },
+    {
+      "allowed_tools": [
+        "bash",
+        "unbrowser"
+      ],
+      "bundle_hash": "a81982fd0f904d54622796921a833b363af133f6de1dfdc64b2e643ce27e3ebd",
+      "bundle_id": "ub-direct-targeted_query_first-final_reobserve-fail_fast-expanded@2-a81982fd",
+      "command_timeout_seconds": 60,
+      "generator_metadata": {
+        "grammar_name": "unbrowser_interactive",
+        "grammar_size": 72,
+        "grammar_version": "m3-v2",
+        "index": 21,
+        "observation": "targeted_query_first",
+        "planning": "direct",
+        "recovery": "fail_fast",
+        "tool_cap": "expanded",
+        "verification": "final_reobserve"
+      },
+      "id": "ub-direct-targeted_query_first-final_reobserve-fail_fast-expanded",
+      "max_output_tokens": 4096,
+      "system_prompt": "Planning: Solve the task directly without pre-planning. Do not emit any planning text before the first tool call; start with the tool immediately.\n\nObservation: After navigate, the first successful observation must use the query action with a targeted selector. Locate specific information first.\n\nVerification: After obtaining the candidate answer and before writing result.json, repeat a relevant read-only observation to confirm it.\n\nRecovery: If a tool call fails or returns no useful information, make no further tool calls; stop and report the failure.\n\n\n\n---\nSafety: Always work in the assigned task workspace. Do not modify system files or access locations outside the allowed URL set. Clean up any temporary state after completion.",
+      "tool_call_limit": 12,
+      "tool_interface": "native_bash_unbrowser_interactive_v1",
+      "version": "2",
+      "wall_time_limit_seconds": 600
+    },
+    {
+      "allowed_tools": [
+        "bash",
+        "unbrowser"
+      ],
+      "bundle_hash": "e75e28425b4572d1b3fff0b196517eb002de27291eb9047a2f12c59a2e07b373",
+      "bundle_id": "ub-direct-targeted_query_first-final_reobserve-diagnose_retry_once-lean@2-e75e2842",
+      "command_timeout_seconds": 60,
+      "generator_metadata": {
+        "grammar_name": "unbrowser_interactive",
+        "grammar_size": 72,
+        "grammar_version": "m3-v2",
+        "index": 22,
+        "observation": "targeted_query_first",
+        "planning": "direct",
+        "recovery": "diagnose_retry_once",
+        "tool_cap": "lean",
+        "verification": "final_reobserve"
+      },
+      "id": "ub-direct-targeted_query_first-final_reobserve-diagnose_retry_once-lean",
+      "max_output_tokens": 4096,
+      "system_prompt": "Planning: Solve the task directly without pre-planning. Do not emit any planning text before the first tool call; start with the tool immediately.\n\nObservation: After navigate, the first successful observation must use the query action with a targeted selector. Locate specific information first.\n\nVerification: After obtaining the candidate answer and before writing result.json, repeat a relevant read-only observation to confirm it.\n\nRecovery: If a tool call fails, diagnose the problem and retry that tool once with a corrected approach before giving up.\n\n\n\n---\nSafety: Always work in the assigned task workspace. Do not modify system files or access locations outside the allowed URL set. Clean up any temporary state after completion.",
+      "tool_call_limit": 6,
+      "tool_interface": "native_bash_unbrowser_interactive_v1",
+      "version": "2",
+      "wall_time_limit_seconds": 600
+    },
+    {
+      "allowed_tools": [
+        "bash",
+        "unbrowser"
+      ],
+      "bundle_hash": "b7cc79422f48bb26d3e4a6be9a18c14b946f09a1e01d556b6cd376d6d412e93f",
+      "bundle_id": "ub-direct-targeted_query_first-final_reobserve-diagnose_retry_once-expanded@2-b7cc7942",
+      "command_timeout_seconds": 60,
+      "generator_metadata": {
+        "grammar_name": "unbrowser_interactive",
+        "grammar_size": 72,
+        "grammar_version": "m3-v2",
+        "index": 23,
+        "observation": "targeted_query_first",
+        "planning": "direct",
+        "recovery": "diagnose_retry_once",
+        "tool_cap": "expanded",
+        "verification": "final_reobserve"
+      },
+      "id": "ub-direct-targeted_query_first-final_reobserve-diagnose_retry_once-expanded",
+      "max_output_tokens": 4096,
+      "system_prompt": "Planning: Solve the task directly without pre-planning. Do not emit any planning text before the first tool call; start with the tool immediately.\n\nObservation: After navigate, the first successful observation must use the query action with a targeted selector. Locate specific information first.\n\nVerification: After obtaining the candidate answer and before writing result.json, repeat a relevant read-only observation to confirm it.\n\nRecovery: If a tool call fails, diagnose the problem and retry that tool once with a corrected approach before giving up.\n\n\n\n---\nSafety: Always work in the assigned task workspace. Do not modify system files or access locations outside the allowed URL set. Clean up any temporary state after completion.",
+      "tool_call_limit": 12,
+      "tool_interface": "native_bash_unbrowser_interactive_v1",
+      "version": "2",
+      "wall_time_limit_seconds": 600
+    },
+    {
+      "allowed_tools": [
+        "bash",
+        "unbrowser"
+      ],
+      "bundle_hash": "86fa91d577f4e2f673fe4e1f6329bb0d88aecd436848af82681a52e7503b58b8",
+      "bundle_id": "ub-brief_plan-text_first-submit_directly-fail_fast-lean@2-86fa91d5",
+      "command_timeout_seconds": 60,
+      "generator_metadata": {
+        "grammar_name": "unbrowser_interactive",
+        "grammar_size": 72,
+        "grammar_version": "m3-v2",
+        "index": 24,
+        "observation": "text_first",
+        "planning": "brief_plan",
+        "recovery": "fail_fast",
+        "tool_cap": "lean",
+        "verification": "submit_directly"
+      },
+      "id": "ub-brief_plan-text_first-submit_directly-fail_fast-lean",
+      "max_output_tokens": 4096,
+      "system_prompt": "Planning: Before the first tool call, emit exactly one line beginning 'PLAN:' with a one-sentence approach, then execute.\n\nObservation: After navigate, the first successful observation must use the text action. Use text extraction before inspecting structure.\n\nVerification: Submit directly after obtaining the candidate answer. Do not repeat a read-only observation before writing result.json.\n\nRecovery: If a tool call fails or returns no useful information, make no further tool calls; stop and report the failure.\n\n\n\n---\nSafety: Always work in the assigned task workspace. Do not modify system files or access locations outside the allowed URL set. Clean up any temporary state after completion.",
+      "tool_call_limit": 6,
+      "tool_interface": "native_bash_unbrowser_interactive_v1",
+      "version": "2",
+      "wall_time_limit_seconds": 600
+    },
+    {
+      "allowed_tools": [
+        "bash",
+        "unbrowser"
+      ],
+      "bundle_hash": "0e35d1abe4f8acaac429c4ee310ff11379bd6a2b194d942a354f28d4c0e38b23",
+      "bundle_id": "ub-brief_plan-text_first-submit_directly-fail_fast-expanded@2-0e35d1ab",
+      "command_timeout_seconds": 60,
+      "generator_metadata": {
+        "grammar_name": "unbrowser_interactive",
+        "grammar_size": 72,
+        "grammar_version": "m3-v2",
+        "index": 25,
+        "observation": "text_first",
+        "planning": "brief_plan",
+        "recovery": "fail_fast",
+        "tool_cap": "expanded",
+        "verification": "submit_directly"
+      },
+      "id": "ub-brief_plan-text_first-submit_directly-fail_fast-expanded",
+      "max_output_tokens": 4096,
+      "system_prompt": "Planning: Before the first tool call, emit exactly one line beginning 'PLAN:' with a one-sentence approach, then execute.\n\nObservation: After navigate, the first successful observation must use the text action. Use text extraction before inspecting structure.\n\nVerification: Submit directly after obtaining the candidate answer. Do not repeat a read-only observation before writing result.json.\n\nRecovery: If a tool call fails or returns no useful information, make no further tool calls; stop and report the failure.\n\n\n\n---\nSafety: Always work in the assigned task workspace. Do not modify system files or access locations outside the allowed URL set. Clean up any temporary state after completion.",
+      "tool_call_limit": 12,
+      "tool_interface": "native_bash_unbrowser_interactive_v1",
+      "version": "2",
+      "wall_time_limit_seconds": 600
+    },
+    {
+      "allowed_tools": [
+        "bash",
+        "unbrowser"
+      ],
+      "bundle_hash": "0698d1e29d479ae0fed0a8766e9f07f8811f35c70db1d48a072eaf95b85579ab",
+      "bundle_id": "ub-brief_plan-text_first-submit_directly-diagnose_retry_once-lean@2-0698d1e2",
+      "command_timeout_seconds": 60,
+      "generator_metadata": {
+        "grammar_name": "unbrowser_interactive",
+        "grammar_size": 72,
+        "grammar_version": "m3-v2",
+        "index": 26,
+        "observation": "text_first",
+        "planning": "brief_plan",
+        "recovery": "diagnose_retry_once",
+        "tool_cap": "lean",
+        "verification": "submit_directly"
+      },
+      "id": "ub-brief_plan-text_first-submit_directly-diagnose_retry_once-lean",
+      "max_output_tokens": 4096,
+      "system_prompt": "Planning: Before the first tool call, emit exactly one line beginning 'PLAN:' with a one-sentence approach, then execute.\n\nObservation: After navigate, the first successful observation must use the text action. Use text extraction before inspecting structure.\n\nVerification: Submit directly after obtaining the candidate answer. Do not repeat a read-only observation before writing result.json.\n\nRecovery: If a tool call fails, diagnose the problem and retry that tool once with a corrected approach before giving up.\n\n\n\n---\nSafety: Always work in the assigned task workspace. Do not modify system files or access locations outside the allowed URL set. Clean up any temporary state after completion.",
+      "tool_call_limit": 6,
+      "tool_interface": "native_bash_unbrowser_interactive_v1",
+      "version": "2",
+      "wall_time_limit_seconds": 600
+    },
+    {
+      "allowed_tools": [
+        "bash",
+        "unbrowser"
+      ],
+      "bundle_hash": "626c122d53a46d4da7a6941998a9fccf726a12478bc8ff31a6a49567346ed619",
+      "bundle_id": "ub-brief_plan-text_first-submit_directly-diagnose_retry_once-expanded@2-626c122d",
+      "command_timeout_seconds": 60,
+      "generator_metadata": {
+        "grammar_name": "unbrowser_interactive",
+        "grammar_size": 72,
+        "grammar_version": "m3-v2",
+        "index": 27,
+        "observation": "text_first",
+        "planning": "brief_plan",
+        "recovery": "diagnose_retry_once",
+        "tool_cap": "expanded",
+        "verification": "submit_directly"
+      },
+      "id": "ub-brief_plan-text_first-submit_directly-diagnose_retry_once-expanded",
+      "max_output_tokens": 4096,
+      "system_prompt": "Planning: Before the first tool call, emit exactly one line beginning 'PLAN:' with a one-sentence approach, then execute.\n\nObservation: After navigate, the first successful observation must use the text action. Use text extraction before inspecting structure.\n\nVerification: Submit directly after obtaining the candidate answer. Do not repeat a read-only observation before writing result.json.\n\nRecovery: If a tool call fails, diagnose the problem and retry that tool once with a corrected approach before giving up.\n\n\n\n---\nSafety: Always work in the assigned task workspace. Do not modify system files or access locations outside the allowed URL set. Clean up any temporary state after completion.",
+      "tool_call_limit": 12,
+      "tool_interface": "native_bash_unbrowser_interactive_v1",
+      "version": "2",
+      "wall_time_limit_seconds": 600
+    },
+    {
+      "allowed_tools": [
+        "bash",
+        "unbrowser"
+      ],
+      "bundle_hash": "d73ce8d3282f2a1a9bca7cfec94c197f9b10581f85b1e9b03eb350420898b353",
+      "bundle_id": "ub-brief_plan-text_first-final_reobserve-fail_fast-lean@2-d73ce8d3",
+      "command_timeout_seconds": 60,
+      "generator_metadata": {
+        "grammar_name": "unbrowser_interactive",
+        "grammar_size": 72,
+        "grammar_version": "m3-v2",
+        "index": 28,
+        "observation": "text_first",
+        "planning": "brief_plan",
+        "recovery": "fail_fast",
+        "tool_cap": "lean",
+        "verification": "final_reobserve"
+      },
+      "id": "ub-brief_plan-text_first-final_reobserve-fail_fast-lean",
+      "max_output_tokens": 4096,
+      "system_prompt": "Planning: Before the first tool call, emit exactly one line beginning 'PLAN:' with a one-sentence approach, then execute.\n\nObservation: After navigate, the first successful observation must use the text action. Use text extraction before inspecting structure.\n\nVerification: After obtaining the candidate answer and before writing result.json, repeat a relevant read-only observation to confirm it.\n\nRecovery: If a tool call fails or returns no useful information, make no further tool calls; stop and report the failure.\n\n\n\n---\nSafety: Always work in the assigned task workspace. Do not modify system files or access locations outside the allowed URL set. Clean up any temporary state after completion.",
+      "tool_call_limit": 6,
+      "tool_interface": "native_bash_unbrowser_interactive_v1",
+      "version": "2",
+      "wall_time_limit_seconds": 600
+    },
+    {
+      "allowed_tools": [
+        "bash",
+        "unbrowser"
+      ],
+      "bundle_hash": "0bad46e8af2161e0081b5307ae85d0d96dea104a291ebde4335ceb6a2393acd0",
+      "bundle_id": "ub-brief_plan-text_first-final_reobserve-fail_fast-expanded@2-0bad46e8",
+      "command_timeout_seconds": 60,
+      "generator_metadata": {
+        "grammar_name": "unbrowser_interactive",
+        "grammar_size": 72,
+        "grammar_version": "m3-v2",
+        "index": 29,
+        "observation": "text_first",
+        "planning": "brief_plan",
+        "recovery": "fail_fast",
+        "tool_cap": "expanded",
+        "verification": "final_reobserve"
+      },
+      "id": "ub-brief_plan-text_first-final_reobserve-fail_fast-expanded",
+      "max_output_tokens": 4096,
+      "system_prompt": "Planning: Before the first tool call, emit exactly one line beginning 'PLAN:' with a one-sentence approach, then execute.\n\nObservation: After navigate, the first successful observation must use the text action. Use text extraction before inspecting structure.\n\nVerification: After obtaining the candidate answer and before writing result.json, repeat a relevant read-only observation to confirm it.\n\nRecovery: If a tool call fails or returns no useful information, make no further tool calls; stop and report the failure.\n\n\n\n---\nSafety: Always work in the assigned task workspace. Do not modify system files or access locations outside the allowed URL set. Clean up any temporary state after completion.",
+      "tool_call_limit": 12,
+      "tool_interface": "native_bash_unbrowser_interactive_v1",
+      "version": "2",
+      "wall_time_limit_seconds": 600
+    },
+    {
+      "allowed_tools": [
+        "bash",
+        "unbrowser"
+      ],
+      "bundle_hash": "51b96c3ac71513c0a63f35abe9b6a6046e347aeb5b40c7293829c27bc27e01b1",
+      "bundle_id": "ub-brief_plan-text_first-final_reobserve-diagnose_retry_once-lean@2-51b96c3a",
+      "command_timeout_seconds": 60,
+      "generator_metadata": {
+        "grammar_name": "unbrowser_interactive",
+        "grammar_size": 72,
+        "grammar_version": "m3-v2",
+        "index": 30,
+        "observation": "text_first",
+        "planning": "brief_plan",
+        "recovery": "diagnose_retry_once",
+        "tool_cap": "lean",
+        "verification": "final_reobserve"
+      },
+      "id": "ub-brief_plan-text_first-final_reobserve-diagnose_retry_once-lean",
+      "max_output_tokens": 4096,
+      "system_prompt": "Planning: Before the first tool call, emit exactly one line beginning 'PLAN:' with a one-sentence approach, then execute.\n\nObservation: After navigate, the first successful observation must use the text action. Use text extraction before inspecting structure.\n\nVerification: After obtaining the candidate answer and before writing result.json, repeat a relevant read-only observation to confirm it.\n\nRecovery: If a tool call fails, diagnose the problem and retry that tool once with a corrected approach before giving up.\n\n\n\n---\nSafety: Always work in the assigned task workspace. Do not modify system files or access locations outside the allowed URL set. Clean up any temporary state after completion.",
+      "tool_call_limit": 6,
+      "tool_interface": "native_bash_unbrowser_interactive_v1",
+      "version": "2",
+      "wall_time_limit_seconds": 600
+    },
+    {
+      "allowed_tools": [
+        "bash",
+        "unbrowser"
+      ],
+      "bundle_hash": "61af345589c2617eb413e3a69f988720982e8358343a2b519c07e231f1f4f12c",
+      "bundle_id": "ub-brief_plan-text_first-final_reobserve-diagnose_retry_once-expanded@2-61af3455",
+      "command_timeout_seconds": 60,
+      "generator_metadata": {
+        "grammar_name": "unbrowser_interactive",
+        "grammar_size": 72,
+        "grammar_version": "m3-v2",
+        "index": 31,
+        "observation": "text_first",
+        "planning": "brief_plan",
+        "recovery": "diagnose_retry_once",
+        "tool_cap": "expanded",
+        "verification": "final_reobserve"
+      },
+      "id": "ub-brief_plan-text_first-final_reobserve-diagnose_retry_once-expanded",
+      "max_output_tokens": 4096,
+      "system_prompt": "Planning: Before the first tool call, emit exactly one line beginning 'PLAN:' with a one-sentence approach, then execute.\n\nObservation: After navigate, the first successful observation must use the text action. Use text extraction before inspecting structure.\n\nVerification: After obtaining the candidate answer and before writing result.json, repeat a relevant read-only observation to confirm it.\n\nRecovery: If a tool call fails, diagnose the problem and retry that tool once with a corrected approach before giving up.\n\n\n\n---\nSafety: Always work in the assigned task workspace. Do not modify system files or access locations outside the allowed URL set. Clean up any temporary state after completion.",
+      "tool_call_limit": 12,
+      "tool_interface": "native_bash_unbrowser_interactive_v1",
+      "version": "2",
+      "wall_time_limit_seconds": 600
+    },
+    {
+      "allowed_tools": [
+        "bash",
+        "unbrowser"
+      ],
+      "bundle_hash": "6be05531d1abf589c6ca4a7652fe573e0224fdfd19ca1b14d4f054ff1c186809",
+      "bundle_id": "ub-brief_plan-structure_first-submit_directly-fail_fast-lean@2-6be05531",
+      "command_timeout_seconds": 60,
+      "generator_metadata": {
+        "grammar_name": "unbrowser_interactive",
+        "grammar_size": 72,
+        "grammar_version": "m3-v2",
+        "index": 32,
+        "observation": "structure_first",
+        "planning": "brief_plan",
+        "recovery": "fail_fast",
+        "tool_cap": "lean",
+        "verification": "submit_directly"
+      },
+      "id": "ub-brief_plan-structure_first-submit_directly-fail_fast-lean",
+      "max_output_tokens": 4096,
+      "system_prompt": "Planning: Before the first tool call, emit exactly one line beginning 'PLAN:' with a one-sentence approach, then execute.\n\nObservation: After navigate, the first successful observation must use the blockmap action. Inspect structure before extracting text.\n\nVerification: Submit directly after obtaining the candidate answer. Do not repeat a read-only observation before writing result.json.\n\nRecovery: If a tool call fails or returns no useful information, make no further tool calls; stop and report the failure.\n\n\n\n---\nSafety: Always work in the assigned task workspace. Do not modify system files or access locations outside the allowed URL set. Clean up any temporary state after completion.",
+      "tool_call_limit": 6,
+      "tool_interface": "native_bash_unbrowser_interactive_v1",
+      "version": "2",
+      "wall_time_limit_seconds": 600
+    },
+    {
+      "allowed_tools": [
+        "bash",
+        "unbrowser"
+      ],
+      "bundle_hash": "456c843a3bb6fbca449bf8d960a6bb3a331b38032913ed08132d8d48b4cccae7",
+      "bundle_id": "ub-brief_plan-structure_first-submit_directly-fail_fast-expanded@2-456c843a",
+      "command_timeout_seconds": 60,
+      "generator_metadata": {
+        "grammar_name": "unbrowser_interactive",
+        "grammar_size": 72,
+        "grammar_version": "m3-v2",
+        "index": 33,
+        "observation": "structure_first",
+        "planning": "brief_plan",
+        "recovery": "fail_fast",
+        "tool_cap": "expanded",
+        "verification": "submit_directly"
+      },
+      "id": "ub-brief_plan-structure_first-submit_directly-fail_fast-expanded",
+      "max_output_tokens": 4096,
+      "system_prompt": "Planning: Before the first tool call, emit exactly one line beginning 'PLAN:' with a one-sentence approach, then execute.\n\nObservation: After navigate, the first successful observation must use the blockmap action. Inspect structure before extracting text.\n\nVerification: Submit directly after obtaining the candidate answer. Do not repeat a read-only observation before writing result.json.\n\nRecovery: If a tool call fails or returns no useful information, make no further tool calls; stop and report the failure.\n\n\n\n---\nSafety: Always work in the assigned task workspace. Do not modify system files or access locations outside the allowed URL set. Clean up any temporary state after completion.",
+      "tool_call_limit": 12,
+      "tool_interface": "native_bash_unbrowser_interactive_v1",
+      "version": "2",
+      "wall_time_limit_seconds": 600
+    },
+    {
+      "allowed_tools": [
+        "bash",
+        "unbrowser"
+      ],
+      "bundle_hash": "447209c7beb156eb52aee062b190afcaf024e64bffb9efcfab77bf98aa6b83f3",
+      "bundle_id": "ub-brief_plan-structure_first-submit_directly-diagnose_retry_once-lean@2-447209c7",
+      "command_timeout_seconds": 60,
+      "generator_metadata": {
+        "grammar_name": "unbrowser_interactive",
+        "grammar_size": 72,
+        "grammar_version": "m3-v2",
+        "index": 34,
+        "observation": "structure_first",
+        "planning": "brief_plan",
+        "recovery": "diagnose_retry_once",
+        "tool_cap": "lean",
+        "verification": "submit_directly"
+      },
+      "id": "ub-brief_plan-structure_first-submit_directly-diagnose_retry_once-lean",
+      "max_output_tokens": 4096,
+      "system_prompt": "Planning: Before the first tool call, emit exactly one line beginning 'PLAN:' with a one-sentence approach, then execute.\n\nObservation: After navigate, the first successful observation must use the blockmap action. Inspect structure before extracting text.\n\nVerification: Submit directly after obtaining the candidate answer. Do not repeat a read-only observation before writing result.json.\n\nRecovery: If a tool call fails, diagnose the problem and retry that tool once with a corrected approach before giving up.\n\n\n\n---\nSafety: Always work in the assigned task workspace. Do not modify system files or access locations outside the allowed URL set. Clean up any temporary state after completion.",
+      "tool_call_limit": 6,
+      "tool_interface": "native_bash_unbrowser_interactive_v1",
+      "version": "2",
+      "wall_time_limit_seconds": 600
+    },
+    {
+      "allowed_tools": [
+        "bash",
+        "unbrowser"
+      ],
+      "bundle_hash": "02f461431b98d39c3428e4292c2547ab6db29b902e03f78ebca61f36aedd42ad",
+      "bundle_id": "ub-brief_plan-structure_first-submit_directly-diagnose_retry_once-expanded@2-02f46143",
+      "command_timeout_seconds": 60,
+      "generator_metadata": {
+        "grammar_name": "unbrowser_interactive",
+        "grammar_size": 72,
+        "grammar_version": "m3-v2",
+        "index": 35,
+        "observation": "structure_first",
+        "planning": "brief_plan",
+        "recovery": "diagnose_retry_once",
+        "tool_cap": "expanded",
+        "verification": "submit_directly"
+      },
+      "id": "ub-brief_plan-structure_first-submit_directly-diagnose_retry_once-expanded",
+      "max_output_tokens": 4096,
+      "system_prompt": "Planning: Before the first tool call, emit exactly one line beginning 'PLAN:' with a one-sentence approach, then execute.\n\nObservation: After navigate, the first successful observation must use the blockmap action. Inspect structure before extracting text.\n\nVerification: Submit directly after obtaining the candidate answer. Do not repeat a read-only observation before writing result.json.\n\nRecovery: If a tool call fails, diagnose the problem and retry that tool once with a corrected approach before giving up.\n\n\n\n---\nSafety: Always work in the assigned task workspace. Do not modify system files or access locations outside the allowed URL set. Clean up any temporary state after completion.",
+      "tool_call_limit": 12,
+      "tool_interface": "native_bash_unbrowser_interactive_v1",
+      "version": "2",
+      "wall_time_limit_seconds": 600
+    },
+    {
+      "allowed_tools": [
+        "bash",
+        "unbrowser"
+      ],
+      "bundle_hash": "badee1518309a35fd7658f560526d32b6f60745da62c93395fe973a65cc4d725",
+      "bundle_id": "ub-brief_plan-structure_first-final_reobserve-fail_fast-lean@2-badee151",
+      "command_timeout_seconds": 60,
+      "generator_metadata": {
+        "grammar_name": "unbrowser_interactive",
+        "grammar_size": 72,
+        "grammar_version": "m3-v2",
+        "index": 36,
+        "observation": "structure_first",
+        "planning": "brief_plan",
+        "recovery": "fail_fast",
+        "tool_cap": "lean",
+        "verification": "final_reobserve"
+      },
+      "id": "ub-brief_plan-structure_first-final_reobserve-fail_fast-lean",
+      "max_output_tokens": 4096,
+      "system_prompt": "Planning: Before the first tool call, emit exactly one line beginning 'PLAN:' with a one-sentence approach, then execute.\n\nObservation: After navigate, the first successful observation must use the blockmap action. Inspect structure before extracting text.\n\nVerification: After obtaining the candidate answer and before writing result.json, repeat a relevant read-only observation to confirm it.\n\nRecovery: If a tool call fails or returns no useful information, make no further tool calls; stop and report the failure.\n\n\n\n---\nSafety: Always work in the assigned task workspace. Do not modify system files or access locations outside the allowed URL set. Clean up any temporary state after completion.",
+      "tool_call_limit": 6,
+      "tool_interface": "native_bash_unbrowser_interactive_v1",
+      "version": "2",
+      "wall_time_limit_seconds": 600
+    },
+    {
+      "allowed_tools": [
+        "bash",
+        "unbrowser"
+      ],
+      "bundle_hash": "3d2c51eed261b07b2f769ee05f6265fc718d5f14f47fa3274e16bc21a85cd48b",
+      "bundle_id": "ub-brief_plan-structure_first-final_reobserve-fail_fast-expanded@2-3d2c51ee",
+      "command_timeout_seconds": 60,
+      "generator_metadata": {
+        "grammar_name": "unbrowser_interactive",
+        "grammar_size": 72,
+        "grammar_version": "m3-v2",
+        "index": 37,
+        "observation": "structure_first",
+        "planning": "brief_plan",
+        "recovery": "fail_fast",
+        "tool_cap": "expanded",
+        "verification": "final_reobserve"
+      },
+      "id": "ub-brief_plan-structure_first-final_reobserve-fail_fast-expanded",
+      "max_output_tokens": 4096,
+      "system_prompt": "Planning: Before the first tool call, emit exactly one line beginning 'PLAN:' with a one-sentence approach, then execute.\n\nObservation: After navigate, the first successful observation must use the blockmap action. Inspect structure before extracting text.\n\nVerification: After obtaining the candidate answer and before writing result.json, repeat a relevant read-only observation to confirm it.\n\nRecovery: If a tool call fails or returns no useful information, make no further tool calls; stop and report the failure.\n\n\n\n---\nSafety: Always work in the assigned task workspace. Do not modify system files or access locations outside the allowed URL set. Clean up any temporary state after completion.",
+      "tool_call_limit": 12,
+      "tool_interface": "native_bash_unbrowser_interactive_v1",
+      "version": "2",
+      "wall_time_limit_seconds": 600
+    },
+    {
+      "allowed_tools": [
+        "bash",
+        "unbrowser"
+      ],
+      "bundle_hash": "6f17b0c07ffe97d3060b22a1bd0497ad02d667f41451162ce1a4e6fd90a53cfa",
+      "bundle_id": "ub-brief_plan-structure_first-final_reobserve-diagnose_retry_once-lean@2-6f17b0c0",
+      "command_timeout_seconds": 60,
+      "generator_metadata": {
+        "grammar_name": "unbrowser_interactive",
+        "grammar_size": 72,
+        "grammar_version": "m3-v2",
+        "index": 38,
+        "observation": "structure_first",
+        "planning": "brief_plan",
+        "recovery": "diagnose_retry_once",
+        "tool_cap": "lean",
+        "verification": "final_reobserve"
+      },
+      "id": "ub-brief_plan-structure_first-final_reobserve-diagnose_retry_once-lean",
+      "max_output_tokens": 4096,
+      "system_prompt": "Planning: Before the first tool call, emit exactly one line beginning 'PLAN:' with a one-sentence approach, then execute.\n\nObservation: After navigate, the first successful observation must use the blockmap action. Inspect structure before extracting text.\n\nVerification: After obtaining the candidate answer and before writing result.json, repeat a relevant read-only observation to confirm it.\n\nRecovery: If a tool call fails, diagnose the problem and retry that tool once with a corrected approach before giving up.\n\n\n\n---\nSafety: Always work in the assigned task workspace. Do not modify system files or access locations outside the allowed URL set. Clean up any temporary state after completion.",
+      "tool_call_limit": 6,
+      "tool_interface": "native_bash_unbrowser_interactive_v1",
+      "version": "2",
+      "wall_time_limit_seconds": 600
+    },
+    {
+      "allowed_tools": [
+        "bash",
+        "unbrowser"
+      ],
+      "bundle_hash": "c9159356ce56fbd72761d9424862efc0bfe39361e50405d9c630cb68d3579bd6",
+      "bundle_id": "ub-brief_plan-structure_first-final_reobserve-diagnose_retry_once-expanded@2-c9159356",
+      "command_timeout_seconds": 60,
+      "generator_metadata": {
+        "grammar_name": "unbrowser_interactive",
+        "grammar_size": 72,
+        "grammar_version": "m3-v2",
+        "index": 39,
+        "observation": "structure_first",
+        "planning": "brief_plan",
+        "recovery": "diagnose_retry_once",
+        "tool_cap": "expanded",
+        "verification": "final_reobserve"
+      },
+      "id": "ub-brief_plan-structure_first-final_reobserve-diagnose_retry_once-expanded",
+      "max_output_tokens": 4096,
+      "system_prompt": "Planning: Before the first tool call, emit exactly one line beginning 'PLAN:' with a one-sentence approach, then execute.\n\nObservation: After navigate, the first successful observation must use the blockmap action. Inspect structure before extracting text.\n\nVerification: After obtaining the candidate answer and before writing result.json, repeat a relevant read-only observation to confirm it.\n\nRecovery: If a tool call fails, diagnose the problem and retry that tool once with a corrected approach before giving up.\n\n\n\n---\nSafety: Always work in the assigned task workspace. Do not modify system files or access locations outside the allowed URL set. Clean up any temporary state after completion.",
+      "tool_call_limit": 12,
+      "tool_interface": "native_bash_unbrowser_interactive_v1",
+      "version": "2",
+      "wall_time_limit_seconds": 600
+    },
+    {
+      "allowed_tools": [
+        "bash",
+        "unbrowser"
+      ],
+      "bundle_hash": "b43895b8c165e2eaca7c58ed13451a253797eece11f405df5d0f531792426991",
+      "bundle_id": "ub-brief_plan-targeted_query_first-submit_directly-fail_fast-lean@2-b43895b8",
+      "command_timeout_seconds": 60,
+      "generator_metadata": {
+        "grammar_name": "unbrowser_interactive",
+        "grammar_size": 72,
+        "grammar_version": "m3-v2",
+        "index": 40,
+        "observation": "targeted_query_first",
+        "planning": "brief_plan",
+        "recovery": "fail_fast",
+        "tool_cap": "lean",
+        "verification": "submit_directly"
+      },
+      "id": "ub-brief_plan-targeted_query_first-submit_directly-fail_fast-lean",
+      "max_output_tokens": 4096,
+      "system_prompt": "Planning: Before the first tool call, emit exactly one line beginning 'PLAN:' with a one-sentence approach, then execute.\n\nObservation: After navigate, the first successful observation must use the query action with a targeted selector. Locate specific information first.\n\nVerification: Submit directly after obtaining the candidate answer. Do not repeat a read-only observation before writing result.json.\n\nRecovery: If a tool call fails or returns no useful information, make no further tool calls; stop and report the failure.\n\n\n\n---\nSafety: Always work in the assigned task workspace. Do not modify system files or access locations outside the allowed URL set. Clean up any temporary state after completion.",
+      "tool_call_limit": 6,
+      "tool_interface": "native_bash_unbrowser_interactive_v1",
+      "version": "2",
+      "wall_time_limit_seconds": 600
+    },
+    {
+      "allowed_tools": [
+        "bash",
+        "unbrowser"
+      ],
+      "bundle_hash": "f3a6194e9bf079616cd22b70451f02174128a025e2d66f28b1eaa84b3ed0228b",
+      "bundle_id": "ub-brief_plan-targeted_query_first-submit_directly-fail_fast-expanded@2-f3a6194e",
+      "command_timeout_seconds": 60,
+      "generator_metadata": {
+        "grammar_name": "unbrowser_interactive",
+        "grammar_size": 72,
+        "grammar_version": "m3-v2",
+        "index": 41,
+        "observation": "targeted_query_first",
+        "planning": "brief_plan",
+        "recovery": "fail_fast",
+        "tool_cap": "expanded",
+        "verification": "submit_directly"
+      },
+      "id": "ub-brief_plan-targeted_query_first-submit_directly-fail_fast-expanded",
+      "max_output_tokens": 4096,
+      "system_prompt": "Planning: Before the first tool call, emit exactly one line beginning 'PLAN:' with a one-sentence approach, then execute.\n\nObservation: After navigate, the first successful observation must use the query action with a targeted selector. Locate specific information first.\n\nVerification: Submit directly after obtaining the candidate answer. Do not repeat a read-only observation before writing result.json.\n\nRecovery: If a tool call fails or returns no useful information, make no further tool calls; stop and report the failure.\n\n\n\n---\nSafety: Always work in the assigned task workspace. Do not modify system files or access locations outside the allowed URL set. Clean up any temporary state after completion.",
+      "tool_call_limit": 12,
+      "tool_interface": "native_bash_unbrowser_interactive_v1",
+      "version": "2",
+      "wall_time_limit_seconds": 600
+    },
+    {
+      "allowed_tools": [
+        "bash",
+        "unbrowser"
+      ],
+      "bundle_hash": "f4f40587d404d3dc876edf732944fbab70f71e6fd34733fd39f5887ba4fb66ce",
+      "bundle_id": "ub-brief_plan-targeted_query_first-submit_directly-diagnose_retry_once-lean@2-f4f40587",
+      "command_timeout_seconds": 60,
+      "generator_metadata": {
+        "grammar_name": "unbrowser_interactive",
+        "grammar_size": 72,
+        "grammar_version": "m3-v2",
+        "index": 42,
+        "observation": "targeted_query_first",
+        "planning": "brief_plan",
+        "recovery": "diagnose_retry_once",
+        "tool_cap": "lean",
+        "verification": "submit_directly"
+      },
+      "id": "ub-brief_plan-targeted_query_first-submit_directly-diagnose_retry_once-lean",
+      "max_output_tokens": 4096,
+      "system_prompt": "Planning: Before the first tool call, emit exactly one line beginning 'PLAN:' with a one-sentence approach, then execute.\n\nObservation: After navigate, the first successful observation must use the query action with a targeted selector. Locate specific information first.\n\nVerification: Submit directly after obtaining the candidate answer. Do not repeat a read-only observation before writing result.json.\n\nRecovery: If a tool call fails, diagnose the problem and retry that tool once with a corrected approach before giving up.\n\n\n\n---\nSafety: Always work in the assigned task workspace. Do not modify system files or access locations outside the allowed URL set. Clean up any temporary state after completion.",
+      "tool_call_limit": 6,
+      "tool_interface": "native_bash_unbrowser_interactive_v1",
+      "version": "2",
+      "wall_time_limit_seconds": 600
+    },
+    {
+      "allowed_tools": [
+        "bash",
+        "unbrowser"
+      ],
+      "bundle_hash": "bb092e07df42f4391334115b9118daa6192848330d80e9955f7e3d0e7e5b0973",
+      "bundle_id": "ub-brief_plan-targeted_query_first-submit_directly-diagnose_retry_once-expanded@2-bb092e07",
+      "command_timeout_seconds": 60,
+      "generator_metadata": {
+        "grammar_name": "unbrowser_interactive",
+        "grammar_size": 72,
+        "grammar_version": "m3-v2",
+        "index": 43,
+        "observation": "targeted_query_first",
+        "planning": "brief_plan",
+        "recovery": "diagnose_retry_once",
+        "tool_cap": "expanded",
+        "verification": "submit_directly"
+      },
+      "id": "ub-brief_plan-targeted_query_first-submit_directly-diagnose_retry_once-expanded",
+      "max_output_tokens": 4096,
+      "system_prompt": "Planning: Before the first tool call, emit exactly one line beginning 'PLAN:' with a one-sentence approach, then execute.\n\nObservation: After navigate, the first successful observation must use the query action with a targeted selector. Locate specific information first.\n\nVerification: Submit directly after obtaining the candidate answer. Do not repeat a read-only observation before writing result.json.\n\nRecovery: If a tool call fails, diagnose the problem and retry that tool once with a corrected approach before giving up.\n\n\n\n---\nSafety: Always work in the assigned task workspace. Do not modify system files or access locations outside the allowed URL set. Clean up any temporary state after completion.",
+      "tool_call_limit": 12,
+      "tool_interface": "native_bash_unbrowser_interactive_v1",
+      "version": "2",
+      "wall_time_limit_seconds": 600
+    },
+    {
+      "allowed_tools": [
+        "bash",
+        "unbrowser"
+      ],
+      "bundle_hash": "3a60216b922d502002c5d5d82e21f99954de395d1106b08c587bfdc194841a87",
+      "bundle_id": "ub-brief_plan-targeted_query_first-final_reobserve-fail_fast-lean@2-3a60216b",
+      "command_timeout_seconds": 60,
+      "generator_metadata": {
+        "grammar_name": "unbrowser_interactive",
+        "grammar_size": 72,
+        "grammar_version": "m3-v2",
+        "index": 44,
+        "observation": "targeted_query_first",
+        "planning": "brief_plan",
+        "recovery": "fail_fast",
+        "tool_cap": "lean",
+        "verification": "final_reobserve"
+      },
+      "id": "ub-brief_plan-targeted_query_first-final_reobserve-fail_fast-lean",
+      "max_output_tokens": 4096,
+      "system_prompt": "Planning: Before the first tool call, emit exactly one line beginning 'PLAN:' with a one-sentence approach, then execute.\n\nObservation: After navigate, the first successful observation must use the query action with a targeted selector. Locate specific information first.\n\nVerification: After obtaining the candidate answer and before writing result.json, repeat a relevant read-only observation to confirm it.\n\nRecovery: If a tool call fails or returns no useful information, make no further tool calls; stop and report the failure.\n\n\n\n---\nSafety: Always work in the assigned task workspace. Do not modify system files or access locations outside the allowed URL set. Clean up any temporary state after completion.",
+      "tool_call_limit": 6,
+      "tool_interface": "native_bash_unbrowser_interactive_v1",
+      "version": "2",
+      "wall_time_limit_seconds": 600
+    },
+    {
+      "allowed_tools": [
+        "bash",
+        "unbrowser"
+      ],
+      "bundle_hash": "3ff55020a5f810d4eae1cd2847aeb4258cb4c33d0d171293c1a72ae095ac6223",
+      "bundle_id": "ub-brief_plan-targeted_query_first-final_reobserve-fail_fast-expanded@2-3ff55020",
+      "command_timeout_seconds": 60,
+      "generator_metadata": {
+        "grammar_name": "unbrowser_interactive",
+        "grammar_size": 72,
+        "grammar_version": "m3-v2",
+        "index": 45,
+        "observation": "targeted_query_first",
+        "planning": "brief_plan",
+        "recovery": "fail_fast",
+        "tool_cap": "expanded",
+        "verification": "final_reobserve"
+      },
+      "id": "ub-brief_plan-targeted_query_first-final_reobserve-fail_fast-expanded",
+      "max_output_tokens": 4096,
+      "system_prompt": "Planning: Before the first tool call, emit exactly one line beginning 'PLAN:' with a one-sentence approach, then execute.\n\nObservation: After navigate, the first successful observation must use the query action with a targeted selector. Locate specific information first.\n\nVerification: After obtaining the candidate answer and before writing result.json, repeat a relevant read-only observation to confirm it.\n\nRecovery: If a tool call fails or returns no useful information, make no further tool calls; stop and report the failure.\n\n\n\n---\nSafety: Always work in the assigned task workspace. Do not modify system files or access locations outside the allowed URL set. Clean up any temporary state after completion.",
+      "tool_call_limit": 12,
+      "tool_interface": "native_bash_unbrowser_interactive_v1",
+      "version": "2",
+      "wall_time_limit_seconds": 600
+    },
+    {
+      "allowed_tools": [
+        "bash",
+        "unbrowser"
+      ],
+      "bundle_hash": "e643366260b539f22a9a528fd381e8848e0d48834782e24efc839cc7a456326f",
+      "bundle_id": "ub-brief_plan-targeted_query_first-final_reobserve-diagnose_retry_once-lean@2-e6433662",
+      "command_timeout_seconds": 60,
+      "generator_metadata": {
+        "grammar_name": "unbrowser_interactive",
+        "grammar_size": 72,
+        "grammar_version": "m3-v2",
+        "index": 46,
+        "observation": "targeted_query_first",
+        "planning": "brief_plan",
+        "recovery": "diagnose_retry_once",
+        "tool_cap": "lean",
+        "verification": "final_reobserve"
+      },
+      "id": "ub-brief_plan-targeted_query_first-final_reobserve-diagnose_retry_once-lean",
+      "max_output_tokens": 4096,
+      "system_prompt": "Planning: Before the first tool call, emit exactly one line beginning 'PLAN:' with a one-sentence approach, then execute.\n\nObservation: After navigate, the first successful observation must use the query action with a targeted selector. Locate specific information first.\n\nVerification: After obtaining the candidate answer and before writing result.json, repeat a relevant read-only observation to confirm it.\n\nRecovery: If a tool call fails, diagnose the problem and retry that tool once with a corrected approach before giving up.\n\n\n\n---\nSafety: Always work in the assigned task workspace. Do not modify system files or access locations outside the allowed URL set. Clean up any temporary state after completion.",
+      "tool_call_limit": 6,
+      "tool_interface": "native_bash_unbrowser_interactive_v1",
+      "version": "2",
+      "wall_time_limit_seconds": 600
+    },
+    {
+      "allowed_tools": [
+        "bash",
+        "unbrowser"
+      ],
+      "bundle_hash": "eb535a71df2c50622b070b3dddaba9b04f8d06efed7b05b5bc36253fd3d51061",
+      "bundle_id": "ub-brief_plan-targeted_query_first-final_reobserve-diagnose_retry_once-expanded@2-eb535a71",
+      "command_timeout_seconds": 60,
+      "generator_metadata": {
+        "grammar_name": "unbrowser_interactive",
+        "grammar_size": 72,
+        "grammar_version": "m3-v2",
+        "index": 47,
+        "observation": "targeted_query_first",
+        "planning": "brief_plan",
+        "recovery": "diagnose_retry_once",
+        "tool_cap": "expanded",
+        "verification": "final_reobserve"
+      },
+      "id": "ub-brief_plan-targeted_query_first-final_reobserve-diagnose_retry_once-expanded",
+      "max_output_tokens": 4096,
+      "system_prompt": "Planning: Before the first tool call, emit exactly one line beginning 'PLAN:' with a one-sentence approach, then execute.\n\nObservation: After navigate, the first successful observation must use the query action with a targeted selector. Locate specific information first.\n\nVerification: After obtaining the candidate answer and before writing result.json, repeat a relevant read-only observation to confirm it.\n\nRecovery: If a tool call fails, diagnose the problem and retry that tool once with a corrected approach before giving up.\n\n\n\n---\nSafety: Always work in the assigned task workspace. Do not modify system files or access locations outside the allowed URL set. Clean up any temporary state after completion.",
+      "tool_call_limit": 12,
+      "tool_interface": "native_bash_unbrowser_interactive_v1",
+      "version": "2",
+      "wall_time_limit_seconds": 600
+    },
+    {
+      "allowed_tools": [
+        "bash",
+        "unbrowser"
+      ],
+      "bundle_hash": "b88a5f958b1a9cda93060571fa30b0413d24dbada4ddb3d7e722729e98f6dff0",
+      "bundle_id": "ub-decompose-text_first-submit_directly-fail_fast-lean@2-b88a5f95",
+      "command_timeout_seconds": 60,
+      "generator_metadata": {
+        "grammar_name": "unbrowser_interactive",
+        "grammar_size": 72,
+        "grammar_version": "m3-v2",
+        "index": 48,
+        "observation": "text_first",
+        "planning": "decompose",
+        "recovery": "fail_fast",
+        "tool_cap": "lean",
+        "verification": "submit_directly"
+      },
+      "id": "ub-decompose-text_first-submit_directly-fail_fast-lean",
+      "max_output_tokens": 4096,
+      "system_prompt": "Planning: Before the first tool call, emit at least two decomposition lines beginning 'STEP 1:' and 'STEP 2:'. Solve the steps independently, then combine the results.\n\nObservation: After navigate, the first successful observation must use the text action. Use text extraction before inspecting structure.\n\nVerification: Submit directly after obtaining the candidate answer. Do not repeat a read-only observation before writing result.json.\n\nRecovery: If a tool call fails or returns no useful information, make no further tool calls; stop and report the failure.\n\n\n\n---\nSafety: Always work in the assigned task workspace. Do not modify system files or access locations outside the allowed URL set. Clean up any temporary state after completion.",
+      "tool_call_limit": 6,
+      "tool_interface": "native_bash_unbrowser_interactive_v1",
+      "version": "2",
+      "wall_time_limit_seconds": 600
+    },
+    {
+      "allowed_tools": [
+        "bash",
+        "unbrowser"
+      ],
+      "bundle_hash": "8fc59221ca96872864ca5c9d53e25efd288c8f95c52ea27daae7853ff6df0fb6",
+      "bundle_id": "ub-decompose-text_first-submit_directly-fail_fast-expanded@2-8fc59221",
+      "command_timeout_seconds": 60,
+      "generator_metadata": {
+        "grammar_name": "unbrowser_interactive",
+        "grammar_size": 72,
+        "grammar_version": "m3-v2",
+        "index": 49,
+        "observation": "text_first",
+        "planning": "decompose",
+        "recovery": "fail_fast",
+        "tool_cap": "expanded",
+        "verification": "submit_directly"
+      },
+      "id": "ub-decompose-text_first-submit_directly-fail_fast-expanded",
+      "max_output_tokens": 4096,
+      "system_prompt": "Planning: Before the first tool call, emit at least two decomposition lines beginning 'STEP 1:' and 'STEP 2:'. Solve the steps independently, then combine the results.\n\nObservation: After navigate, the first successful observation must use the text action. Use text extraction before inspecting structure.\n\nVerification: Submit directly after obtaining the candidate answer. Do not repeat a read-only observation before writing result.json.\n\nRecovery: If a tool call fails or returns no useful information, make no further tool calls; stop and report the failure.\n\n\n\n---\nSafety: Always work in the assigned task workspace. Do not modify system files or access locations outside the allowed URL set. Clean up any temporary state after completion.",
+      "tool_call_limit": 12,
+      "tool_interface": "native_bash_unbrowser_interactive_v1",
+      "version": "2",
+      "wall_time_limit_seconds": 600
+    },
+    {
+      "allowed_tools": [
+        "bash",
+        "unbrowser"
+      ],
+      "bundle_hash": "22bad18f365b2ff4cff18c6b01500fbd0d9a408e2677893ee34cef676b27badb",
+      "bundle_id": "ub-decompose-text_first-submit_directly-diagnose_retry_once-lean@2-22bad18f",
+      "command_timeout_seconds": 60,
+      "generator_metadata": {
+        "grammar_name": "unbrowser_interactive",
+        "grammar_size": 72,
+        "grammar_version": "m3-v2",
+        "index": 50,
+        "observation": "text_first",
+        "planning": "decompose",
+        "recovery": "diagnose_retry_once",
+        "tool_cap": "lean",
+        "verification": "submit_directly"
+      },
+      "id": "ub-decompose-text_first-submit_directly-diagnose_retry_once-lean",
+      "max_output_tokens": 4096,
+      "system_prompt": "Planning: Before the first tool call, emit at least two decomposition lines beginning 'STEP 1:' and 'STEP 2:'. Solve the steps independently, then combine the results.\n\nObservation: After navigate, the first successful observation must use the text action. Use text extraction before inspecting structure.\n\nVerification: Submit directly after obtaining the candidate answer. Do not repeat a read-only observation before writing result.json.\n\nRecovery: If a tool call fails, diagnose the problem and retry that tool once with a corrected approach before giving up.\n\n\n\n---\nSafety: Always work in the assigned task workspace. Do not modify system files or access locations outside the allowed URL set. Clean up any temporary state after completion.",
+      "tool_call_limit": 6,
+      "tool_interface": "native_bash_unbrowser_interactive_v1",
+      "version": "2",
+      "wall_time_limit_seconds": 600
+    },
+    {
+      "allowed_tools": [
+        "bash",
+        "unbrowser"
+      ],
+      "bundle_hash": "439044f8b66ffaa4a5a702ca4937a4311b401a37c907adf517fc7f622645add8",
+      "bundle_id": "ub-decompose-text_first-submit_directly-diagnose_retry_once-expanded@2-439044f8",
+      "command_timeout_seconds": 60,
+      "generator_metadata": {
+        "grammar_name": "unbrowser_interactive",
+        "grammar_size": 72,
+        "grammar_version": "m3-v2",
+        "index": 51,
+        "observation": "text_first",
+        "planning": "decompose",
+        "recovery": "diagnose_retry_once",
+        "tool_cap": "expanded",
+        "verification": "submit_directly"
+      },
+      "id": "ub-decompose-text_first-submit_directly-diagnose_retry_once-expanded",
+      "max_output_tokens": 4096,
+      "system_prompt": "Planning: Before the first tool call, emit at least two decomposition lines beginning 'STEP 1:' and 'STEP 2:'. Solve the steps independently, then combine the results.\n\nObservation: After navigate, the first successful observation must use the text action. Use text extraction before inspecting structure.\n\nVerification: Submit directly after obtaining the candidate answer. Do not repeat a read-only observation before writing result.json.\n\nRecovery: If a tool call fails, diagnose the problem and retry that tool once with a corrected approach before giving up.\n\n\n\n---\nSafety: Always work in the assigned task workspace. Do not modify system files or access locations outside the allowed URL set. Clean up any temporary state after completion.",
+      "tool_call_limit": 12,
+      "tool_interface": "native_bash_unbrowser_interactive_v1",
+      "version": "2",
+      "wall_time_limit_seconds": 600
+    },
+    {
+      "allowed_tools": [
+        "bash",
+        "unbrowser"
+      ],
+      "bundle_hash": "926b95e3537ef0b44b956b51c23daedb2c7b67aecc7aa929e5d4b7bf2617b1c2",
+      "bundle_id": "ub-decompose-text_first-final_reobserve-fail_fast-lean@2-926b95e3",
+      "command_timeout_seconds": 60,
+      "generator_metadata": {
+        "grammar_name": "unbrowser_interactive",
+        "grammar_size": 72,
+        "grammar_version": "m3-v2",
+        "index": 52,
+        "observation": "text_first",
+        "planning": "decompose",
+        "recovery": "fail_fast",
+        "tool_cap": "lean",
+        "verification": "final_reobserve"
+      },
+      "id": "ub-decompose-text_first-final_reobserve-fail_fast-lean",
+      "max_output_tokens": 4096,
+      "system_prompt": "Planning: Before the first tool call, emit at least two decomposition lines beginning 'STEP 1:' and 'STEP 2:'. Solve the steps independently, then combine the results.\n\nObservation: After navigate, the first successful observation must use the text action. Use text extraction before inspecting structure.\n\nVerification: After obtaining the candidate answer and before writing result.json, repeat a relevant read-only observation to confirm it.\n\nRecovery: If a tool call fails or returns no useful information, make no further tool calls; stop and report the failure.\n\n\n\n---\nSafety: Always work in the assigned task workspace. Do not modify system files or access locations outside the allowed URL set. Clean up any temporary state after completion.",
+      "tool_call_limit": 6,
+      "tool_interface": "native_bash_unbrowser_interactive_v1",
+      "version": "2",
+      "wall_time_limit_seconds": 600
+    },
+    {
+      "allowed_tools": [
+        "bash",
+        "unbrowser"
+      ],
+      "bundle_hash": "4ed0fd2f823fed3dc95e4cf936579417105dfb6859007cd35f8eeb62a4a35001",
+      "bundle_id": "ub-decompose-text_first-final_reobserve-fail_fast-expanded@2-4ed0fd2f",
+      "command_timeout_seconds": 60,
+      "generator_metadata": {
+        "grammar_name": "unbrowser_interactive",
+        "grammar_size": 72,
+        "grammar_version": "m3-v2",
+        "index": 53,
+        "observation": "text_first",
+        "planning": "decompose",
+        "recovery": "fail_fast",
+        "tool_cap": "expanded",
+        "verification": "final_reobserve"
+      },
+      "id": "ub-decompose-text_first-final_reobserve-fail_fast-expanded",
+      "max_output_tokens": 4096,
+      "system_prompt": "Planning: Before the first tool call, emit at least two decomposition lines beginning 'STEP 1:' and 'STEP 2:'. Solve the steps independently, then combine the results.\n\nObservation: After navigate, the first successful observation must use the text action. Use text extraction before inspecting structure.\n\nVerification: After obtaining the candidate answer and before writing result.json, repeat a relevant read-only observation to confirm it.\n\nRecovery: If a tool call fails or returns no useful information, make no further tool calls; stop and report the failure.\n\n\n\n---\nSafety: Always work in the assigned task workspace. Do not modify system files or access locations outside the allowed URL set. Clean up any temporary state after completion.",
+      "tool_call_limit": 12,
+      "tool_interface": "native_bash_unbrowser_interactive_v1",
+      "version": "2",
+      "wall_time_limit_seconds": 600
+    },
+    {
+      "allowed_tools": [
+        "bash",
+        "unbrowser"
+      ],
+      "bundle_hash": "24653a73d14cb621faa995c47b90f5fd50fffb506fa74eab42a72542bc500b41",
+      "bundle_id": "ub-decompose-text_first-final_reobserve-diagnose_retry_once-lean@2-24653a73",
+      "command_timeout_seconds": 60,
+      "generator_metadata": {
+        "grammar_name": "unbrowser_interactive",
+        "grammar_size": 72,
+        "grammar_version": "m3-v2",
+        "index": 54,
+        "observation": "text_first",
+        "planning": "decompose",
+        "recovery": "diagnose_retry_once",
+        "tool_cap": "lean",
+        "verification": "final_reobserve"
+      },
+      "id": "ub-decompose-text_first-final_reobserve-diagnose_retry_once-lean",
+      "max_output_tokens": 4096,
+      "system_prompt": "Planning: Before the first tool call, emit at least two decomposition lines beginning 'STEP 1:' and 'STEP 2:'. Solve the steps independently, then combine the results.\n\nObservation: After navigate, the first successful observation must use the text action. Use text extraction before inspecting structure.\n\nVerification: After obtaining the candidate answer and before writing result.json, repeat a relevant read-only observation to confirm it.\n\nRecovery: If a tool call fails, diagnose the problem and retry that tool once with a corrected approach before giving up.\n\n\n\n---\nSafety: Always work in the assigned task workspace. Do not modify system files or access locations outside the allowed URL set. Clean up any temporary state after completion.",
+      "tool_call_limit": 6,
+      "tool_interface": "native_bash_unbrowser_interactive_v1",
+      "version": "2",
+      "wall_time_limit_seconds": 600
+    },
+    {
+      "allowed_tools": [
+        "bash",
+        "unbrowser"
+      ],
+      "bundle_hash": "79cee6acf96a5720c33227f36f3d6d83d7d4f9fa2ecc4ec63c6d3698d8dab5e4",
+      "bundle_id": "ub-decompose-text_first-final_reobserve-diagnose_retry_once-expanded@2-79cee6ac",
+      "command_timeout_seconds": 60,
+      "generator_metadata": {
+        "grammar_name": "unbrowser_interactive",
+        "grammar_size": 72,
+        "grammar_version": "m3-v2",
+        "index": 55,
+        "observation": "text_first",
+        "planning": "decompose",
+        "recovery": "diagnose_retry_once",
+        "tool_cap": "expanded",
+        "verification": "final_reobserve"
+      },
+      "id": "ub-decompose-text_first-final_reobserve-diagnose_retry_once-expanded",
+      "max_output_tokens": 4096,
+      "system_prompt": "Planning: Before the first tool call, emit at least two decomposition lines beginning 'STEP 1:' and 'STEP 2:'. Solve the steps independently, then combine the results.\n\nObservation: After navigate, the first successful observation must use the text action. Use text extraction before inspecting structure.\n\nVerification: After obtaining the candidate answer and before writing result.json, repeat a relevant read-only observation to confirm it.\n\nRecovery: If a tool call fails, diagnose the problem and retry that tool once with a corrected approach before giving up.\n\n\n\n---\nSafety: Always work in the assigned task workspace. Do not modify system files or access locations outside the allowed URL set. Clean up any temporary state after completion.",
+      "tool_call_limit": 12,
+      "tool_interface": "native_bash_unbrowser_interactive_v1",
+      "version": "2",
+      "wall_time_limit_seconds": 600
+    },
+    {
+      "allowed_tools": [
+        "bash",
+        "unbrowser"
+      ],
+      "bundle_hash": "a6ab225627bb11bbdeade1e034e4d71d3b3b7eb018d0a09b0330ec506c8a7466",
+      "bundle_id": "ub-decompose-structure_first-submit_directly-fail_fast-lean@2-a6ab2256",
+      "command_timeout_seconds": 60,
+      "generator_metadata": {
+        "grammar_name": "unbrowser_interactive",
+        "grammar_size": 72,
+        "grammar_version": "m3-v2",
+        "index": 56,
+        "observation": "structure_first",
+        "planning": "decompose",
+        "recovery": "fail_fast",
+        "tool_cap": "lean",
+        "verification": "submit_directly"
+      },
+      "id": "ub-decompose-structure_first-submit_directly-fail_fast-lean",
+      "max_output_tokens": 4096,
+      "system_prompt": "Planning: Before the first tool call, emit at least two decomposition lines beginning 'STEP 1:' and 'STEP 2:'. Solve the steps independently, then combine the results.\n\nObservation: After navigate, the first successful observation must use the blockmap action. Inspect structure before extracting text.\n\nVerification: Submit directly after obtaining the candidate answer. Do not repeat a read-only observation before writing result.json.\n\nRecovery: If a tool call fails or returns no useful information, make no further tool calls; stop and report the failure.\n\n\n\n---\nSafety: Always work in the assigned task workspace. Do not modify system files or access locations outside the allowed URL set. Clean up any temporary state after completion.",
+      "tool_call_limit": 6,
+      "tool_interface": "native_bash_unbrowser_interactive_v1",
+      "version": "2",
+      "wall_time_limit_seconds": 600
+    },
+    {
+      "allowed_tools": [
+        "bash",
+        "unbrowser"
+      ],
+      "bundle_hash": "19bd770abd81cd1edec5cd290c1400a54dc94a6a6c279c6d3710407dd12e825c",
+      "bundle_id": "ub-decompose-structure_first-submit_directly-fail_fast-expanded@2-19bd770a",
+      "command_timeout_seconds": 60,
+      "generator_metadata": {
+        "grammar_name": "unbrowser_interactive",
+        "grammar_size": 72,
+        "grammar_version": "m3-v2",
+        "index": 57,
+        "observation": "structure_first",
+        "planning": "decompose",
+        "recovery": "fail_fast",
+        "tool_cap": "expanded",
+        "verification": "submit_directly"
+      },
+      "id": "ub-decompose-structure_first-submit_directly-fail_fast-expanded",
+      "max_output_tokens": 4096,
+      "system_prompt": "Planning: Before the first tool call, emit at least two decomposition lines beginning 'STEP 1:' and 'STEP 2:'. Solve the steps independently, then combine the results.\n\nObservation: After navigate, the first successful observation must use the blockmap action. Inspect structure before extracting text.\n\nVerification: Submit directly after obtaining the candidate answer. Do not repeat a read-only observation before writing result.json.\n\nRecovery: If a tool call fails or returns no useful information, make no further tool calls; stop and report the failure.\n\n\n\n---\nSafety: Always work in the assigned task workspace. Do not modify system files or access locations outside the allowed URL set. Clean up any temporary state after completion.",
+      "tool_call_limit": 12,
+      "tool_interface": "native_bash_unbrowser_interactive_v1",
+      "version": "2",
+      "wall_time_limit_seconds": 600
+    },
+    {
+      "allowed_tools": [
+        "bash",
+        "unbrowser"
+      ],
+      "bundle_hash": "ab2c77cbea4f7dc8aa6b690d0d75879e0b71184d3674829a3dc97d95a368f900",
+      "bundle_id": "ub-decompose-structure_first-submit_directly-diagnose_retry_once-lean@2-ab2c77cb",
+      "command_timeout_seconds": 60,
+      "generator_metadata": {
+        "grammar_name": "unbrowser_interactive",
+        "grammar_size": 72,
+        "grammar_version": "m3-v2",
+        "index": 58,
+        "observation": "structure_first",
+        "planning": "decompose",
+        "recovery": "diagnose_retry_once",
+        "tool_cap": "lean",
+        "verification": "submit_directly"
+      },
+      "id": "ub-decompose-structure_first-submit_directly-diagnose_retry_once-lean",
+      "max_output_tokens": 4096,
+      "system_prompt": "Planning: Before the first tool call, emit at least two decomposition lines beginning 'STEP 1:' and 'STEP 2:'. Solve the steps independently, then combine the results.\n\nObservation: After navigate, the first successful observation must use the blockmap action. Inspect structure before extracting text.\n\nVerification: Submit directly after obtaining the candidate answer. Do not repeat a read-only observation before writing result.json.\n\nRecovery: If a tool call fails, diagnose the problem and retry that tool once with a corrected approach before giving up.\n\n\n\n---\nSafety: Always work in the assigned task workspace. Do not modify system files or access locations outside the allowed URL set. Clean up any temporary state after completion.",
+      "tool_call_limit": 6,
+      "tool_interface": "native_bash_unbrowser_interactive_v1",
+      "version": "2",
+      "wall_time_limit_seconds": 600
+    },
+    {
+      "allowed_tools": [
+        "bash",
+        "unbrowser"
+      ],
+      "bundle_hash": "e7e84c831c2a4ba62ec758ef1ed5045a25a8c4f35e38ad427ffc09a06860c7c4",
+      "bundle_id": "ub-decompose-structure_first-submit_directly-diagnose_retry_once-expanded@2-e7e84c83",
+      "command_timeout_seconds": 60,
+      "generator_metadata": {
+        "grammar_name": "unbrowser_interactive",
+        "grammar_size": 72,
+        "grammar_version": "m3-v2",
+        "index": 59,
+        "observation": "structure_first",
+        "planning": "decompose",
+        "recovery": "diagnose_retry_once",
+        "tool_cap": "expanded",
+        "verification": "submit_directly"
+      },
+      "id": "ub-decompose-structure_first-submit_directly-diagnose_retry_once-expanded",
+      "max_output_tokens": 4096,
+      "system_prompt": "Planning: Before the first tool call, emit at least two decomposition lines beginning 'STEP 1:' and 'STEP 2:'. Solve the steps independently, then combine the results.\n\nObservation: After navigate, the first successful observation must use the blockmap action. Inspect structure before extracting text.\n\nVerification: Submit directly after obtaining the candidate answer. Do not repeat a read-only observation before writing result.json.\n\nRecovery: If a tool call fails, diagnose the problem and retry that tool once with a corrected approach before giving up.\n\n\n\n---\nSafety: Always work in the assigned task workspace. Do not modify system files or access locations outside the allowed URL set. Clean up any temporary state after completion.",
+      "tool_call_limit": 12,
+      "tool_interface": "native_bash_unbrowser_interactive_v1",
+      "version": "2",
+      "wall_time_limit_seconds": 600
+    },
+    {
+      "allowed_tools": [
+        "bash",
+        "unbrowser"
+      ],
+      "bundle_hash": "50673882356b68a4dde1b3e660a2f2aa2d57043565158371f9d035025ca6185f",
+      "bundle_id": "ub-decompose-structure_first-final_reobserve-fail_fast-lean@2-50673882",
+      "command_timeout_seconds": 60,
+      "generator_metadata": {
+        "grammar_name": "unbrowser_interactive",
+        "grammar_size": 72,
+        "grammar_version": "m3-v2",
+        "index": 60,
+        "observation": "structure_first",
+        "planning": "decompose",
+        "recovery": "fail_fast",
+        "tool_cap": "lean",
+        "verification": "final_reobserve"
+      },
+      "id": "ub-decompose-structure_first-final_reobserve-fail_fast-lean",
+      "max_output_tokens": 4096,
+      "system_prompt": "Planning: Before the first tool call, emit at least two decomposition lines beginning 'STEP 1:' and 'STEP 2:'. Solve the steps independently, then combine the results.\n\nObservation: After navigate, the first successful observation must use the blockmap action. Inspect structure before extracting text.\n\nVerification: After obtaining the candidate answer and before writing result.json, repeat a relevant read-only observation to confirm it.\n\nRecovery: If a tool call fails or returns no useful information, make no further tool calls; stop and report the failure.\n\n\n\n---\nSafety: Always work in the assigned task workspace. Do not modify system files or access locations outside the allowed URL set. Clean up any temporary state after completion.",
+      "tool_call_limit": 6,
+      "tool_interface": "native_bash_unbrowser_interactive_v1",
+      "version": "2",
+      "wall_time_limit_seconds": 600
+    },
+    {
+      "allowed_tools": [
+        "bash",
+        "unbrowser"
+      ],
+      "bundle_hash": "6088d6a33195b4c38f99279b97a4777d2a84f22a21288d28e5ae147b3867791f",
+      "bundle_id": "ub-decompose-structure_first-final_reobserve-fail_fast-expanded@2-6088d6a3",
+      "command_timeout_seconds": 60,
+      "generator_metadata": {
+        "grammar_name": "unbrowser_interactive",
+        "grammar_size": 72,
+        "grammar_version": "m3-v2",
+        "index": 61,
+        "observation": "structure_first",
+        "planning": "decompose",
+        "recovery": "fail_fast",
+        "tool_cap": "expanded",
+        "verification": "final_reobserve"
+      },
+      "id": "ub-decompose-structure_first-final_reobserve-fail_fast-expanded",
+      "max_output_tokens": 4096,
+      "system_prompt": "Planning: Before the first tool call, emit at least two decomposition lines beginning 'STEP 1:' and 'STEP 2:'. Solve the steps independently, then combine the results.\n\nObservation: After navigate, the first successful observation must use the blockmap action. Inspect structure before extracting text.\n\nVerification: After obtaining the candidate answer and before writing result.json, repeat a relevant read-only observation to confirm it.\n\nRecovery: If a tool call fails or returns no useful information, make no further tool calls; stop and report the failure.\n\n\n\n---\nSafety: Always work in the assigned task workspace. Do not modify system files or access locations outside the allowed URL set. Clean up any temporary state after completion.",
+      "tool_call_limit": 12,
+      "tool_interface": "native_bash_unbrowser_interactive_v1",
+      "version": "2",
+      "wall_time_limit_seconds": 600
+    },
+    {
+      "allowed_tools": [
+        "bash",
+        "unbrowser"
+      ],
+      "bundle_hash": "d6b85464bee38a535353f01d5ad93f523c0719a3511ba78b8acde88dcb2722fe",
+      "bundle_id": "ub-decompose-structure_first-final_reobserve-diagnose_retry_once-lean@2-d6b85464",
+      "command_timeout_seconds": 60,
+      "generator_metadata": {
+        "grammar_name": "unbrowser_interactive",
+        "grammar_size": 72,
+        "grammar_version": "m3-v2",
+        "index": 62,
+        "observation": "structure_first",
+        "planning": "decompose",
+        "recovery": "diagnose_retry_once",
+        "tool_cap": "lean",
+        "verification": "final_reobserve"
+      },
+      "id": "ub-decompose-structure_first-final_reobserve-diagnose_retry_once-lean",
+      "max_output_tokens": 4096,
+      "system_prompt": "Planning: Before the first tool call, emit at least two decomposition lines beginning 'STEP 1:' and 'STEP 2:'. Solve the steps independently, then combine the results.\n\nObservation: After navigate, the first successful observation must use the blockmap action. Inspect structure before extracting text.\n\nVerification: After obtaining the candidate answer and before writing result.json, repeat a relevant read-only observation to confirm it.\n\nRecovery: If a tool call fails, diagnose the problem and retry that tool once with a corrected approach before giving up.\n\n\n\n---\nSafety: Always work in the assigned task workspace. Do not modify system files or access locations outside the allowed URL set. Clean up any temporary state after completion.",
+      "tool_call_limit": 6,
+      "tool_interface": "native_bash_unbrowser_interactive_v1",
+      "version": "2",
+      "wall_time_limit_seconds": 600
+    },
+    {
+      "allowed_tools": [
+        "bash",
+        "unbrowser"
+      ],
+      "bundle_hash": "8aa4b2225c8f88868edf24bf508d29a4a9ba9e97abcca95ae365f2dc3146d11f",
+      "bundle_id": "ub-decompose-structure_first-final_reobserve-diagnose_retry_once-expanded@2-8aa4b222",
+      "command_timeout_seconds": 60,
+      "generator_metadata": {
+        "grammar_name": "unbrowser_interactive",
+        "grammar_size": 72,
+        "grammar_version": "m3-v2",
+        "index": 63,
+        "observation": "structure_first",
+        "planning": "decompose",
+        "recovery": "diagnose_retry_once",
+        "tool_cap": "expanded",
+        "verification": "final_reobserve"
+      },
+      "id": "ub-decompose-structure_first-final_reobserve-diagnose_retry_once-expanded",
+      "max_output_tokens": 4096,
+      "system_prompt": "Planning: Before the first tool call, emit at least two decomposition lines beginning 'STEP 1:' and 'STEP 2:'. Solve the steps independently, then combine the results.\n\nObservation: After navigate, the first successful observation must use the blockmap action. Inspect structure before extracting text.\n\nVerification: After obtaining the candidate answer and before writing result.json, repeat a relevant read-only observation to confirm it.\n\nRecovery: If a tool call fails, diagnose the problem and retry that tool once with a corrected approach before giving up.\n\n\n\n---\nSafety: Always work in the assigned task workspace. Do not modify system files or access locations outside the allowed URL set. Clean up any temporary state after completion.",
+      "tool_call_limit": 12,
+      "tool_interface": "native_bash_unbrowser_interactive_v1",
+      "version": "2",
+      "wall_time_limit_seconds": 600
+    },
+    {
+      "allowed_tools": [
+        "bash",
+        "unbrowser"
+      ],
+      "bundle_hash": "67c5eadc00f0b36a875d6b1d2767233fe3a338d49cfab6ca1597d8f0e75169ba",
+      "bundle_id": "ub-decompose-targeted_query_first-submit_directly-fail_fast-lean@2-67c5eadc",
+      "command_timeout_seconds": 60,
+      "generator_metadata": {
+        "grammar_name": "unbrowser_interactive",
+        "grammar_size": 72,
+        "grammar_version": "m3-v2",
+        "index": 64,
+        "observation": "targeted_query_first",
+        "planning": "decompose",
+        "recovery": "fail_fast",
+        "tool_cap": "lean",
+        "verification": "submit_directly"
+      },
+      "id": "ub-decompose-targeted_query_first-submit_directly-fail_fast-lean",
+      "max_output_tokens": 4096,
+      "system_prompt": "Planning: Before the first tool call, emit at least two decomposition lines beginning 'STEP 1:' and 'STEP 2:'. Solve the steps independently, then combine the results.\n\nObservation: After navigate, the first successful observation must use the query action with a targeted selector. Locate specific information first.\n\nVerification: Submit directly after obtaining the candidate answer. Do not repeat a read-only observation before writing result.json.\n\nRecovery: If a tool call fails or returns no useful information, make no further tool calls; stop and report the failure.\n\n\n\n---\nSafety: Always work in the assigned task workspace. Do not modify system files or access locations outside the allowed URL set. Clean up any temporary state after completion.",
+      "tool_call_limit": 6,
+      "tool_interface": "native_bash_unbrowser_interactive_v1",
+      "version": "2",
+      "wall_time_limit_seconds": 600
+    },
+    {
+      "allowed_tools": [
+        "bash",
+        "unbrowser"
+      ],
+      "bundle_hash": "82c99b617cb6a44081c7f719a3a28354b0dac1c83465253a7f564e542c80a8de",
+      "bundle_id": "ub-decompose-targeted_query_first-submit_directly-fail_fast-expanded@2-82c99b61",
+      "command_timeout_seconds": 60,
+      "generator_metadata": {
+        "grammar_name": "unbrowser_interactive",
+        "grammar_size": 72,
+        "grammar_version": "m3-v2",
+        "index": 65,
+        "observation": "targeted_query_first",
+        "planning": "decompose",
+        "recovery": "fail_fast",
+        "tool_cap": "expanded",
+        "verification": "submit_directly"
+      },
+      "id": "ub-decompose-targeted_query_first-submit_directly-fail_fast-expanded",
+      "max_output_tokens": 4096,
+      "system_prompt": "Planning: Before the first tool call, emit at least two decomposition lines beginning 'STEP 1:' and 'STEP 2:'. Solve the steps independently, then combine the results.\n\nObservation: After navigate, the first successful observation must use the query action with a targeted selector. Locate specific information first.\n\nVerification: Submit directly after obtaining the candidate answer. Do not repeat a read-only observation before writing result.json.\n\nRecovery: If a tool call fails or returns no useful information, make no further tool calls; stop and report the failure.\n\n\n\n---\nSafety: Always work in the assigned task workspace. Do not modify system files or access locations outside the allowed URL set. Clean up any temporary state after completion.",
+      "tool_call_limit": 12,
+      "tool_interface": "native_bash_unbrowser_interactive_v1",
+      "version": "2",
+      "wall_time_limit_seconds": 600
+    },
+    {
+      "allowed_tools": [
+        "bash",
+        "unbrowser"
+      ],
+      "bundle_hash": "12ab1e4583bc6ff18f5d3d15a44399cdfaef8c711457ef33316a414004dc0ded",
+      "bundle_id": "ub-decompose-targeted_query_first-submit_directly-diagnose_retry_once-lean@2-12ab1e45",
+      "command_timeout_seconds": 60,
+      "generator_metadata": {
+        "grammar_name": "unbrowser_interactive",
+        "grammar_size": 72,
+        "grammar_version": "m3-v2",
+        "index": 66,
+        "observation": "targeted_query_first",
+        "planning": "decompose",
+        "recovery": "diagnose_retry_once",
+        "tool_cap": "lean",
+        "verification": "submit_directly"
+      },
+      "id": "ub-decompose-targeted_query_first-submit_directly-diagnose_retry_once-lean",
+      "max_output_tokens": 4096,
+      "system_prompt": "Planning: Before the first tool call, emit at least two decomposition lines beginning 'STEP 1:' and 'STEP 2:'. Solve the steps independently, then combine the results.\n\nObservation: After navigate, the first successful observation must use the query action with a targeted selector. Locate specific information first.\n\nVerification: Submit directly after obtaining the candidate answer. Do not repeat a read-only observation before writing result.json.\n\nRecovery: If a tool call fails, diagnose the problem and retry that tool once with a corrected approach before giving up.\n\n\n\n---\nSafety: Always work in the assigned task workspace. Do not modify system files or access locations outside the allowed URL set. Clean up any temporary state after completion.",
+      "tool_call_limit": 6,
+      "tool_interface": "native_bash_unbrowser_interactive_v1",
+      "version": "2",
+      "wall_time_limit_seconds": 600
+    },
+    {
+      "allowed_tools": [
+        "bash",
+        "unbrowser"
+      ],
+      "bundle_hash": "6474b2f53470fcfbf84b6d4d025def92d888b75568e4063d41d2b71396a2f13c",
+      "bundle_id": "ub-decompose-targeted_query_first-submit_directly-diagnose_retry_once-expanded@2-6474b2f5",
+      "command_timeout_seconds": 60,
+      "generator_metadata": {
+        "grammar_name": "unbrowser_interactive",
+        "grammar_size": 72,
+        "grammar_version": "m3-v2",
+        "index": 67,
+        "observation": "targeted_query_first",
+        "planning": "decompose",
+        "recovery": "diagnose_retry_once",
+        "tool_cap": "expanded",
+        "verification": "submit_directly"
+      },
+      "id": "ub-decompose-targeted_query_first-submit_directly-diagnose_retry_once-expanded",
+      "max_output_tokens": 4096,
+      "system_prompt": "Planning: Before the first tool call, emit at least two decomposition lines beginning 'STEP 1:' and 'STEP 2:'. Solve the steps independently, then combine the results.\n\nObservation: After navigate, the first successful observation must use the query action with a targeted selector. Locate specific information first.\n\nVerification: Submit directly after obtaining the candidate answer. Do not repeat a read-only observation before writing result.json.\n\nRecovery: If a tool call fails, diagnose the problem and retry that tool once with a corrected approach before giving up.\n\n\n\n---\nSafety: Always work in the assigned task workspace. Do not modify system files or access locations outside the allowed URL set. Clean up any temporary state after completion.",
+      "tool_call_limit": 12,
+      "tool_interface": "native_bash_unbrowser_interactive_v1",
+      "version": "2",
+      "wall_time_limit_seconds": 600
+    },
+    {
+      "allowed_tools": [
+        "bash",
+        "unbrowser"
+      ],
+      "bundle_hash": "3b054213374bbb55a9dfbbccd73983e54cb95c0b71c2a757d7e6807edfafea6f",
+      "bundle_id": "ub-decompose-targeted_query_first-final_reobserve-fail_fast-lean@2-3b054213",
+      "command_timeout_seconds": 60,
+      "generator_metadata": {
+        "grammar_name": "unbrowser_interactive",
+        "grammar_size": 72,
+        "grammar_version": "m3-v2",
+        "index": 68,
+        "observation": "targeted_query_first",
+        "planning": "decompose",
+        "recovery": "fail_fast",
+        "tool_cap": "lean",
+        "verification": "final_reobserve"
+      },
+      "id": "ub-decompose-targeted_query_first-final_reobserve-fail_fast-lean",
+      "max_output_tokens": 4096,
+      "system_prompt": "Planning: Before the first tool call, emit at least two decomposition lines beginning 'STEP 1:' and 'STEP 2:'. Solve the steps independently, then combine the results.\n\nObservation: After navigate, the first successful observation must use the query action with a targeted selector. Locate specific information first.\n\nVerification: After obtaining the candidate answer and before writing result.json, repeat a relevant read-only observation to confirm it.\n\nRecovery: If a tool call fails or returns no useful information, make no further tool calls; stop and report the failure.\n\n\n\n---\nSafety: Always work in the assigned task workspace. Do not modify system files or access locations outside the allowed URL set. Clean up any temporary state after completion.",
+      "tool_call_limit": 6,
+      "tool_interface": "native_bash_unbrowser_interactive_v1",
+      "version": "2",
+      "wall_time_limit_seconds": 600
+    },
+    {
+      "allowed_tools": [
+        "bash",
+        "unbrowser"
+      ],
+      "bundle_hash": "bd72d6609e8f579dd9e56ff96afc869f877114514eb79a587f4919904a5fd0d3",
+      "bundle_id": "ub-decompose-targeted_query_first-final_reobserve-fail_fast-expanded@2-bd72d660",
+      "command_timeout_seconds": 60,
+      "generator_metadata": {
+        "grammar_name": "unbrowser_interactive",
+        "grammar_size": 72,
+        "grammar_version": "m3-v2",
+        "index": 69,
+        "observation": "targeted_query_first",
+        "planning": "decompose",
+        "recovery": "fail_fast",
+        "tool_cap": "expanded",
+        "verification": "final_reobserve"
+      },
+      "id": "ub-decompose-targeted_query_first-final_reobserve-fail_fast-expanded",
+      "max_output_tokens": 4096,
+      "system_prompt": "Planning: Before the first tool call, emit at least two decomposition lines beginning 'STEP 1:' and 'STEP 2:'. Solve the steps independently, then combine the results.\n\nObservation: After navigate, the first successful observation must use the query action with a targeted selector. Locate specific information first.\n\nVerification: After obtaining the candidate answer and before writing result.json, repeat a relevant read-only observation to confirm it.\n\nRecovery: If a tool call fails or returns no useful information, make no further tool calls; stop and report the failure.\n\n\n\n---\nSafety: Always work in the assigned task workspace. Do not modify system files or access locations outside the allowed URL set. Clean up any temporary state after completion.",
+      "tool_call_limit": 12,
+      "tool_interface": "native_bash_unbrowser_interactive_v1",
+      "version": "2",
+      "wall_time_limit_seconds": 600
+    },
+    {
+      "allowed_tools": [
+        "bash",
+        "unbrowser"
+      ],
+      "bundle_hash": "61413415d36c8ae752454609979b023f8b63fb482b22e1c42c0d7f5c41dc2fea",
+      "bundle_id": "ub-decompose-targeted_query_first-final_reobserve-diagnose_retry_once-lean@2-61413415",
+      "command_timeout_seconds": 60,
+      "generator_metadata": {
+        "grammar_name": "unbrowser_interactive",
+        "grammar_size": 72,
+        "grammar_version": "m3-v2",
+        "index": 70,
+        "observation": "targeted_query_first",
+        "planning": "decompose",
+        "recovery": "diagnose_retry_once",
+        "tool_cap": "lean",
+        "verification": "final_reobserve"
+      },
+      "id": "ub-decompose-targeted_query_first-final_reobserve-diagnose_retry_once-lean",
+      "max_output_tokens": 4096,
+      "system_prompt": "Planning: Before the first tool call, emit at least two decomposition lines beginning 'STEP 1:' and 'STEP 2:'. Solve the steps independently, then combine the results.\n\nObservation: After navigate, the first successful observation must use the query action with a targeted selector. Locate specific information first.\n\nVerification: After obtaining the candidate answer and before writing result.json, repeat a relevant read-only observation to confirm it.\n\nRecovery: If a tool call fails, diagnose the problem and retry that tool once with a corrected approach before giving up.\n\n\n\n---\nSafety: Always work in the assigned task workspace. Do not modify system files or access locations outside the allowed URL set. Clean up any temporary state after completion.",
+      "tool_call_limit": 6,
+      "tool_interface": "native_bash_unbrowser_interactive_v1",
+      "version": "2",
+      "wall_time_limit_seconds": 600
+    },
+    {
+      "allowed_tools": [
+        "bash",
+        "unbrowser"
+      ],
+      "bundle_hash": "810ed789254e2e71ae93db9c1d29166f8aa282663f267d9c665a2cb795f38d89",
+      "bundle_id": "ub-decompose-targeted_query_first-final_reobserve-diagnose_retry_once-expanded@2-810ed789",
+      "command_timeout_seconds": 60,
+      "generator_metadata": {
+        "grammar_name": "unbrowser_interactive",
+        "grammar_size": 72,
+        "grammar_version": "m3-v2",
+        "index": 71,
+        "observation": "targeted_query_first",
+        "planning": "decompose",
+        "recovery": "diagnose_retry_once",
+        "tool_cap": "expanded",
+        "verification": "final_reobserve"
+      },
+      "id": "ub-decompose-targeted_query_first-final_reobserve-diagnose_retry_once-expanded",
+      "max_output_tokens": 4096,
+      "system_prompt": "Planning: Before the first tool call, emit at least two decomposition lines beginning 'STEP 1:' and 'STEP 2:'. Solve the steps independently, then combine the results.\n\nObservation: After navigate, the first successful observation must use the query action with a targeted selector. Locate specific information first.\n\nVerification: After obtaining the candidate answer and before writing result.json, repeat a relevant read-only observation to confirm it.\n\nRecovery: If a tool call fails, diagnose the problem and retry that tool once with a corrected approach before giving up.\n\n\n\n---\nSafety: Always work in the assigned task workspace. Do not modify system files or access locations outside the allowed URL set. Clean up any temporary state after completion.",
+      "tool_call_limit": 12,
+      "tool_interface": "native_bash_unbrowser_interactive_v1",
+      "version": "2",
+      "wall_time_limit_seconds": 600
+    }
+  ]
+}

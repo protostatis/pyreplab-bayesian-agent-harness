@@ -141,8 +141,21 @@ def _row_policy(row: dict[str, Any]) -> str | None:
 
 
 def _row_split(row: dict[str, Any]) -> str:
+    """Return the row's split, failing closed on anything outside ``_SPLITS``.
+
+    Excluded splits (``canary_excluded``, ``pilot_excluded``), unknown splits,
+    and missing splits raise :class:`ValueError` rather than being silently
+    mapped to ``train``; otherwise excluded rows could leak into cost fitting
+    or pair grouping.
+    """
     split = row.get("split")
-    return str(split) if split in _SPLITS else "train"
+    if split not in _SPLITS:
+        raise ValueError(
+            f"row has missing or unknown split {split!r}; expected one of "
+            f"{_SPLITS}. Excluded or missing splits must not be silently "
+            "mapped to train."
+        )
+    return str(split)
 
 
 def fit_train_cost(rows: list[dict[str, Any]]) -> dict[str, Any]:

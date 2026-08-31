@@ -1,0 +1,19 @@
+{
+  "grammar_name": "unbrowser_semantic_capability_canary",
+  "grammar_version": "m3-semantic-canary-v1",
+  "manifest_hash": "b43beb64ee9710bde1dbb604baf46b32326667c7ff111ea7efdfee0bbb9971f6",
+  "policy_version": "1-canary-excluded",
+  "registry_file": "m3-unbrowser-semantic-canary-v1.json",
+  "registry_hash": "8787f3126c5e38f2d6d87187897301716d84703b35642c1216837d650934f777",
+  "schema_version": "m3-policy-split-v1",
+  "split_algorithm": "semantic-canary-isolated-v1",
+  "split_seed": 20260812,
+  "splits": {
+    "development": [],
+    "final_held_out": [],
+    "meta_train": [
+      "ub-direct-semantic-table-submit-directly-diagnose-retry-expanded@1-canary-excluded-c618fe8c",
+      "ub-direct-semantic-form-submit-directly-diagnose-retry-expanded@1-canary-excluded-d9b3e25a"
+    ]
+  }
+}

@@ -1,0 +1,31 @@
+{
+ "ranking": [
+  [
+   "gpt4omini-control",
+   0.227,
+   0.0,
+   4
+  ],
+  [
+   "gpt4omini-execution",
+   0.27,
+   0.0,
+   4
+  ],
+  [
+   "nemotron-control",
+   0.869,
+   0.5,
+   4
+  ],
+  [
+   "nemotron-execution",
+   0.89,
+   0.5,
+   4
+  ]
+ ],
+ "best_pred": "nemotron-execution",
+ "best_obs": "nemotron-control",
+ "metrics": {}
+}

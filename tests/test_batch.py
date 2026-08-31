@@ -9,6 +9,9 @@ from unittest import mock
 from pyreplab_harness.batch import (
     BatchRunSummary,
     BatchSpec,
+    _DEFAULT_CONFINE_UNBROWSER,
+    _DEFAULT_FIXTURE_TEMPLATE,
+    _FIXTURE_TEMPLATES,
     build_parser,
     default_preflight,
     expand_jobs,
@@ -19,6 +22,7 @@ from pyreplab_harness.batch import (
     run_batch,
     validate_spec,
 )
+from pyreplab_harness.meta_grammar import enumerate_unbrowser_grammar
 from pyreplab_harness.treatments import TreatmentRegistry, generate_treatments
 
 
@@ -778,6 +782,317 @@ class CliTest(unittest.TestCase):
             out = Path(tmp) / "runs.jsonl"
             rc = batch_main(["--families", "bogus", "--seeds", "3", "--output", str(out)])
         self.assertEqual(rc, 1)
+
+
+class FixtureFamilyBatchTest(unittest.TestCase):
+    """Tests that the batch runner accepts and correctly handles the
+    ``unbrowser_fixture`` family with its fixture-template and confine-
+    unbrowser flags, and that the 72-cell grammar treatment registry
+    integrates with the batch runner."""
+
+    def test_unbrowser_fixture_is_valid_family(self) -> None:
+        """``unbrowser_fixture`` must be accepted by the family parser."""
+        families = parse_families("unbrowser_fixture")
+        self.assertEqual(families, ("unbrowser_fixture",))
+
+    def test_unbrowser_fixture_with_other_families(self) -> None:
+        """``unbrowser_fixture`` can be combined with other families."""
+        families = parse_families("artifact,unbrowser_fixture,sqlite")
+        self.assertEqual(families, ("artifact", "unbrowser_fixture", "sqlite"))
+
+    def test_unbrowser_fixture_passes_spec_validation(self) -> None:
+        """A BatchSpec with unbrowser_fixture family passes validation."""
+        spec = BatchSpec(
+            families=("unbrowser_fixture",),
+            difficulties=("easy",),
+            seeds=(1,),
+        )
+        self.assertEqual(validate_spec(spec), [])
+
+    def test_fixture_template_argument_available(self) -> None:
+        """``--fixture-template`` is a recognised CLI argument with the
+        correct default."""
+        parser = build_parser()
+        args = parser.parse_args(
+            ["--families", "unbrowser_fixture", "--seeds", "3", "--output", "out.jsonl"]
+        )
+        self.assertEqual(args.fixture_template, _DEFAULT_FIXTURE_TEMPLATE)
+        self.assertIn(args.fixture_template, _FIXTURE_TEMPLATES)
+
+    def test_fixture_template_custom_value(self) -> None:
+        """``--fixture-template`` accepts any of the 8 fixture templates."""
+        for template in _FIXTURE_TEMPLATES:
+            with self.subTest(template=template):
+                parser = build_parser()
+                args = parser.parse_args(
+                    [
+                        "--families",
+                        "unbrowser_fixture",
+                        "--seeds",
+                        "3",
+                        "--fixture-template",
+                        template,
+                        "--output",
+                        "out.jsonl",
+                    ]
+                )
+                self.assertEqual(args.fixture_template, template)
+
+    def test_fixture_template_invalid_value_rejected(self) -> None:
+        """``--fixture-template`` with an unknown template exits with error."""
+        parser = build_parser()
+        with self.assertRaises(SystemExit):
+            parser.parse_args(
+                [
+                    "--families",
+                    "unbrowser_fixture",
+                    "--seeds",
+                    "3",
+                    "--fixture-template",
+                    "bogus_template",
+                    "--output",
+                    "out.jsonl",
+                ]
+            )
+
+    def test_confine_unbrowser_defaults_true(self) -> None:
+        """``--confine-unbrowser`` is True by default."""
+        parser = build_parser()
+        args = parser.parse_args(
+            ["--families", "unbrowser_fixture", "--seeds", "3", "--output", "out.jsonl"]
+        )
+        self.assertTrue(args.confine_unbrowser)
+
+    def test_no_confine_unbrowser_flag(self) -> None:
+        """``--no-confine-unbrowser`` sets confine_unbrowser to False."""
+        parser = build_parser()
+        args = parser.parse_args(
+            [
+                "--families",
+                "unbrowser_fixture",
+                "--seeds",
+                "3",
+                "--no-confine-unbrowser",
+                "--output",
+                "out.jsonl",
+            ]
+        )
+        self.assertFalse(args.confine_unbrowser)
+
+    def test_fixture_flags_passed_to_orchestrator_args(self) -> None:
+        """The batch main function includes fixture_template and
+        confine_unbrowser in the orchestrator args dict."""
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp) / "runs.jsonl"
+            with mock.patch("pyreplab_harness.batch.run_batch") as fake:
+                fake.return_value = BatchRunSummary(
+                    jobs_total=1, completed=1, error=0, skipped=0
+                )
+                batch_main(
+                    [
+                        "--families",
+                        "unbrowser_fixture",
+                        "--seeds",
+                        "3",
+                        "--fixture-template",
+                        "cross_page_comparison",
+                        "--output",
+                        str(out),
+                    ]
+                )
+            orchestrator_args = fake.call_args.args[1]
+            self.assertEqual(
+                orchestrator_args["fixture_template"], "cross_page_comparison"
+            )
+            self.assertTrue(orchestrator_args["confine_unbrowser"])
+
+    def test_grammar_treatment_registry_works_with_batch_runner(self) -> None:
+        """The 72-cell grammar treatment registry can be used as a
+        treatment-source for the batch runner."""
+        grammar_treatments = enumerate_unbrowser_grammar()
+        self.assertEqual(len(grammar_treatments), 72)
+        registry = TreatmentRegistry(tuple(grammar_treatments[:4]))
+        spec = BatchSpec(
+            families=("unbrowser_fixture",),
+            difficulties=("easy",),
+            seeds=(1,),
+            treatment_refs=(grammar_treatments[0].id, grammar_treatments[1].id),
+        )
+        result = {
+            "task_id": "task-1",
+            "mode": "treatment_set",
+            "attempts": {
+                t.bundle_id: {"verification": {"success": True}}
+                for t in grammar_treatments[:2]
+            },
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            registry_path = Path(tmp) / "grammar_registry.json"
+            registry.save(registry_path)
+            out = Path(tmp) / "runs.jsonl"
+            args_dict = base_args(treatment_registry=str(registry_path))
+            with mock.patch(
+                "pyreplab_harness.batch.run_registered_treatments",
+                return_value=result,
+            ) as registered:
+                summary = run_batch(spec, args_dict, out)
+            self.assertEqual(summary.completed, 1)
+            registered.assert_called_once()
+            record = read_records(out)[0]
+        self.assertEqual(record["status"], "completed")
+        self.assertEqual(record["family"], "unbrowser_fixture")
+        self.assertEqual(record["fixture_template"], _DEFAULT_FIXTURE_TEMPLATE)
+        self.assertIs(record["confine_unbrowser"], True)
+
+    def test_batch_record_includes_fixture_fields_for_fixture_family(self) -> None:
+        """When a job family is unbrowser_fixture, the batch record includes
+        fixture_template and confine_unbrowser."""
+        result = {
+            "task_id": "task-1",
+            "mode": "treatment_set",
+            "attempts": {},
+        }
+        treatments = enumerate_unbrowser_grammar()[:1]
+        registry = TreatmentRegistry(tuple(treatments))
+        spec = BatchSpec(
+            families=("unbrowser_fixture",),
+            difficulties=("easy",),
+            seeds=(1,),
+            treatment_refs=(treatments[0].id,),
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            registry_path = Path(tmp) / "grammar_registry.json"
+            registry.save(registry_path)
+            out = Path(tmp) / "runs.jsonl"
+            args_dict = base_args(
+                treatment_registry=str(registry_path),
+                fixture_template="table_filter_sort",
+            )
+            with mock.patch(
+                "pyreplab_harness.batch.run_registered_treatments",
+                return_value=result,
+            ):
+                run_batch(spec, args_dict, out)
+            record = read_records(out)[0]
+        self.assertEqual(record["family"], "unbrowser_fixture")
+        self.assertEqual(record["fixture_template"], "table_filter_sort")
+        self.assertIs(record["confine_unbrowser"], True)
+
+    def test_non_fixture_family_omits_fixture_fields(self) -> None:
+        """Records for non-fixture families do not include fixture_template
+        or confine_unbrowser."""
+        spec = BatchSpec(
+            families=("artifact",),
+            difficulties=("easy",),
+            seeds=(1,),
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp) / "runs.jsonl"
+            with mock.patch(
+                "pyreplab_harness.batch.run_pair",
+                return_value=pair_result(),
+            ):
+                run_batch(spec, base_args(), out)
+            record = read_records(out)[0]
+        self.assertNotIn("fixture_template", record)
+        self.assertNotIn("confine_unbrowser", record)
+
+    def test_custom_unbrowser_binary_reaches_orchestrator_args(self) -> None:
+        """Custom --unbrowser-binary is forwarded in orchestrator_args."""
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp) / "runs.jsonl"
+            with mock.patch("pyreplab_harness.batch.run_batch") as fake:
+                fake.return_value = BatchRunSummary(
+                    jobs_total=1, completed=1, error=0, skipped=0
+                )
+                batch_main(
+                    [
+                        "--families",
+                        "unbrowser",
+                        "--seeds",
+                        "3",
+                        "--unbrowser-binary",
+                        "/opt/custom-unbrowser",
+                        "--output",
+                        str(out),
+                    ]
+                )
+            orchestrator_args = fake.call_args.args[1]
+            self.assertEqual(
+                orchestrator_args["unbrowser_binary"], "/opt/custom-unbrowser"
+            )
+
+    def test_custom_unbrowser_binary_defaults_from_env(self) -> None:
+        """unbrowser_binary defaults to the orchestrator default."""
+        parser = build_parser()
+        args = parser.parse_args(
+            ["--families", "unbrowser", "--seeds", "3", "--output", "out.jsonl"]
+        )
+        self.assertTrue(args.unbrowser_binary.startswith("/"))
+        # The default is either the env var or /usr/local/bin/unbrowser
+        self.assertIn("unbrowser", args.unbrowser_binary)
+
+    def test_no_confine_unbrowser_rejected_with_fixture_family(self) -> None:
+        """--no-confine-unbrowser is rejected when families include
+        unbrowser_fixture."""
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp) / "runs.jsonl"
+            rc = batch_main(
+                [
+                    "--families",
+                    "unbrowser_fixture",
+                    "--seeds",
+                    "3",
+                    "--no-confine-unbrowser",
+                    "--output",
+                    str(out),
+                ]
+            )
+        self.assertEqual(rc, 1)  # exits with error
+
+    def test_no_confine_unbrowser_accepted_with_non_fixture_family(self) -> None:
+        """--no-confine-unbrowser is NOT rejected for non-fixture families."""
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp) / "runs.jsonl"
+            with mock.patch(
+                "pyreplab_harness.batch.run_pair", return_value=pair_result()
+            ):
+                summary = run_batch(
+                    BatchSpec(
+                        families=("unbrowser",),
+                        difficulties=("easy",),
+                        seeds=(1,),
+                    ),
+                    base_args(confine_unbrowser=False),
+                    out,
+                )
+            self.assertEqual(summary.completed, 1)
+
+    def test_no_confine_unbrowser_rejected_in_preflight_for_fixture(self) -> None:
+        """default_preflight rejects --no-confine-unbrowser with fixture family."""
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp) / "runs.jsonl"
+            spec = BatchSpec(
+                families=("unbrowser_fixture",),
+                difficulties=("easy",),
+                seeds=(1,),
+            )
+            with self.assertRaisesRegex(ValueError, "unconditional filesystem"):
+                default_preflight(
+                    spec, base_args(confine_unbrowser=False), out
+                )
+
+    def test_no_confine_unbrowser_allowed_in_preflight_for_non_fixture(self) -> None:
+        """default_preflight allows --no-confine-unbrowser for non-fixture."""
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp) / "runs.jsonl"
+            spec = BatchSpec(
+                families=("unbrowser",),
+                difficulties=("easy",),
+                seeds=(1,),
+            )
+            # Should not raise
+            default_preflight(spec, base_args(confine_unbrowser=False), out)
 
 
 if __name__ == "__main__":

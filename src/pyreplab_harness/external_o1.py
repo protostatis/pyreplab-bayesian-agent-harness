@@ -41,6 +41,7 @@ from pathlib import Path
 from typing import Any, Iterable
 
 from .io_utils import write_json
+from .treatments import TreatmentRegistry, TreatmentSpec, treatment_model_input_descriptor
 
 SCHEMA_VERSION = 1
 DATASET_ID = "o1-swebench-verified-paired-v1"
@@ -133,20 +134,53 @@ def _treatment_descriptors() -> list[dict[str, Any]]:
     return descriptors
 
 
+def build_o1_treatment_registry_object() -> TreatmentRegistry:
+    specs = [
+        TreatmentSpec(
+            id=descriptor["treatment_id"],
+            version=descriptor["treatment_version"],
+            system_prompt=(
+                f"{descriptor['label']}. Protocol: {descriptor['protocol']}. "
+                f"Bundle scope: {', '.join(descriptor['known_bundle_scope'])}."
+            ),
+            allowed_tools=("execute_bash", "finish", "str_replace_editor"),
+            max_output_tokens=100000,
+            tool_call_limit=100,
+            command_timeout_seconds=1200,
+            wall_time_limit_seconds=1800,
+            tool_interface=descriptor["tool_interface"]["transport"],
+            generator_metadata={
+                "source_url": descriptor["source_url"],
+                "source_revision": descriptor["source_revision"],
+                "model": descriptor["model"],
+                "harness": descriptor["harness"],
+                "system_prompt_sha256": descriptor["system_prompt"]["sha256"],
+                "system_prompt_length": descriptor["system_prompt"]["length"],
+            },
+        )
+        for descriptor in _treatment_descriptors()
+    ]
+    return TreatmentRegistry(tuple(specs))
+
+
 def build_treatment_registry() -> dict[str, Any]:
-    treatments = _treatment_descriptors()
+    registry = build_o1_treatment_registry_object()
     return {
-        "schema_version": SCHEMA_VERSION,
-        "dataset_id": DATASET_ID,
-        "source_license": SOURCE_LICENSE,
-        "estimand": "closed-set prompt-plus-tool-interface bundle association",
-        "treatments": treatments,
-        "limitations": [
-            "not an atomic prompt-only intervention",
-            "one observed attempt per task and treatment",
-            "reasoning_effort is declared by the releases but absent from sampled request fields",
-            "external treatment effects do not identify Direct/Deliberate effects",
-        ],
+        **registry.to_dict(),
+        "o1_metadata": {
+            "schema_version": SCHEMA_VERSION,
+            "dataset_id": DATASET_ID,
+            "source_license": SOURCE_LICENSE,
+            "estimand": "closed-set prompt-plus-tool-interface bundle association",
+            "limitations": [
+                "not an atomic prompt-only intervention",
+                "one observed attempt per task and treatment",
+                "reasoning_effort is declared by the releases but absent from sampled request fields",
+                "external treatment effects do not identify Direct/Deliberate effects",
+                "TreatmentSpec system_prompt text is a canonical source reference, not the source prompt body",
+                "numeric TreatmentSpec budgets are shared placeholders and were not observed in the releases",
+            ],
+        },
     }
 
 
@@ -260,32 +294,20 @@ def _normalized_row(
     task: dict[str, Any],
     source_row: dict[str, Any],
     success: bool,
-    treatment: dict[str, Any],
+    treatment: TreatmentSpec,
+    registry_hash: str,
 ) -> dict[str, Any]:
-    treatment_id = str(treatment["treatment_id"])
-    treatment_version = str(treatment["treatment_version"])
+    treatment_id = treatment.id
+    treatment_version = treatment.version
     text = _task_text(task, task_id)
     repo = _task_repo(task, source_row)
-    tool_interface = str(treatment["tool_interface"]["transport"])
-    tools = sorted(str(tool) for tool in treatment["tool_interface"]["tools"])
-    treatment_descriptor = {
-        "text": (
-            f"{treatment['label']}. Protocol: {treatment['protocol']}. "
-            f"Known bundle scope: {', '.join(treatment['known_bundle_scope'])}. "
-            f"Pinned system prompt sha256: {treatment['system_prompt']['sha256']}."
-        ),
-        "bundle_id": (
-            f"{treatment_id}@{treatment_version}-"
-            f"{str(treatment['registry_fingerprint'])[:8]}"
-        ),
-        "tool_interface": tool_interface,
-        "allowed_tools_signature": ",".join(tools),
-    }
+    source_url = str(treatment.generator_metadata["source_url"])
+    source_dataset_id = source_url.removeprefix("https://huggingface.co/datasets/")
     return {
         "schema_version": SCHEMA_VERSION,
         "dataset_id": DATASET_ID,
-        "source_dataset_id": treatment["source_dataset_id"],
-        "source_revision": treatment["source_revision"],
+        "source_dataset_id": source_dataset_id,
+        "source_revision": str(treatment.generator_metadata["source_revision"]),
         "source_license": SOURCE_LICENSE,
         "source_outcome_field": "resolved",
         "task_id": task_id,
@@ -302,7 +324,10 @@ def _normalized_row(
         "public_metadata": {},
         "policy_id": treatment_id,
         "policy_version": treatment_version,
-        "treatment_registry_fingerprint": treatment["registry_fingerprint"],
+        "treatment_bundle_id": treatment.bundle_id,
+        "treatment_bundle_hash": treatment.bundle_hash,
+        "treatment_registry_hash": registry_hash,
+        "treatment_registry_fingerprint": treatment.bundle_hash,
         "split": grouped_task_split(task_id),
         "verified_success": success,
         "failure_code": None if success else "swe_bench_unresolved",
@@ -316,7 +341,7 @@ def _normalized_row(
             "public_metadata": {},
             "policy_id": treatment_id,
             "policy_version": treatment_version,
-            "treatment": treatment_descriptor,
+            "treatment": treatment_model_input_descriptor(treatment),
         },
     }
 
@@ -325,6 +350,7 @@ def build_o1_dataset(
     baseline_rows: list[dict[str, Any]],
     native_rows: list[dict[str, Any]],
     task_rows: list[dict[str, Any]],
+    registry: TreatmentRegistry,
 ) -> tuple[list[dict[str, Any]], dict[str, Any], dict[str, Any], dict[str, Any]]:
     """Build normalized rows, registry, exclusion ledger and summary."""
 
@@ -332,10 +358,8 @@ def build_o1_dataset(
     native = _index_unique(native_rows, ("issue_name",), "native")
     tasks = _index_unique(task_rows, ("instance_id", "issue_name"), "canonical task")
 
-    registry = build_treatment_registry()
-    treatment_by_id = {
-        str(item["treatment_id"]): item for item in registry["treatments"]
-    }
+    treatment_by_id = {spec.id: spec for spec in registry}
+    registry_hash = registry.registry_hash
 
     normalized: list[dict[str, Any]] = []
     excluded: list[dict[str, Any]] = []
@@ -396,6 +420,7 @@ def build_o1_dataset(
                 source_row=baseline_row,
                 success=baseline_y,
                 treatment=treatment_by_id[BASELINE_TREATMENT_ID],
+                registry_hash=registry_hash,
             )
         )
         normalized.append(
@@ -405,6 +430,7 @@ def build_o1_dataset(
                 source_row=native_row,
                 success=native_y,
                 treatment=treatment_by_id[NATIVE_TREATMENT_ID],
+                registry_hash=registry_hash,
             )
         )
 
@@ -434,7 +460,7 @@ def build_o1_dataset(
             sorted(Counter(str(row["split"]) for row in normalized).items())
         ),
     }
-    return normalized, registry, exclusion_ledger, summary
+    return normalized, build_treatment_registry(), exclusion_ledger, summary
 
 
 def _write_jsonl(path: Path, rows: Iterable[dict[str, Any]]) -> None:
@@ -477,7 +503,10 @@ def write_o1_dataset(
         else output.with_name(f"{output.stem}.exclusions.json")
     )
     rows, registry, exclusions, summary = build_o1_dataset(
-        read_records(baseline_path), read_records(native_path), read_records(tasks_path)
+        read_records(baseline_path),
+        read_records(native_path),
+        read_records(tasks_path),
+        build_o1_treatment_registry_object(),
     )
     _write_jsonl(output, rows)
     write_json(registry_target, registry)
@@ -531,6 +560,7 @@ __all__ = [
     "DATASET_ID",
     "NATIVE_TREATMENT_ID",
     "build_o1_dataset",
+    "build_o1_treatment_registry_object",
     "build_parser",
     "build_treatment_registry",
     "grouped_task_split",

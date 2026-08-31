@@ -4,23 +4,70 @@ import argparse
 import json
 import os
 import random
+import re
 import shlex
 import subprocess
 import sys
 import time
 import uuid
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Mapping
 
 from .contracts import PolicySpec
 from .gym_registry import FAMILIES
+from .fixture_templates import TEMPLATES as _FIXTURE_TEMPLATES
 from .treatments import TreatmentRegistry, TreatmentSpec, to_policy_spec_kwargs
-from .unbrowser_rpc import validate_smoke_url
+from .unbrowser_rpc import (
+    FIXTURE_INTERACTIVE_ORIGIN,
+    validate_interactive_url,
+    validate_smoke_url,
+)
+from .unbrowser_fixture_gym import (
+    GENERATOR_VERSION as UNBROWSER_FIXTURE_GENERATOR_VERSION,
+    SUPPORTED_GENERATOR_VERSIONS as _FIXTURE_GENERATOR_VERSIONS,
+)
 
 
 UNBROWSER_TOOL_INTERFACE = "native_bash_unbrowser_readonly_v1"
+UNBROWSER_INTERACTIVE_TOOL_INTERFACE = "native_bash_unbrowser_interactive_v1"
+UNBROWSER_INTERACTIVE_TEXT_FIRST_INTERFACE = "native_bash_unbrowser_interactive_text_first_v1"
+UNBROWSER_INTERACTIVE_STRUCTURE_FIRST_INTERFACE = "native_bash_unbrowser_interactive_structure_first_v1"
+UNBROWSER_SEMANTIC_TABLE_INTERFACE = "native_bash_unbrowser_semantic_table_v1"
+UNBROWSER_SEMANTIC_FORM_INTERFACE = "native_bash_unbrowser_semantic_form_v1"
+RESTRICTED_BASELINE_EXECUTION_PATH = "dedicated_authorized_baseline_runner_v1"
+PINNED_SAMPLING_PARAMETERS: dict[str, int | float] = {
+    "temperature": 0.8,
+    "top_p": 0.95,
+    "top_k": 40,
+    "min_p": 0.05,
+    "repeat_penalty": 1.0,
+    "presence_penalty": 0.0,
+    "frequency_penalty": 0.0,
+}
+_SAMPLING_RECEIPT_PREFIX = "PYREPLAB_SAMPLING_V1 "
+_BUDGET_RECEIPT_PREFIX = "PYREPLAB_GYM_BUDGET_V3 "
+_ATTEMPT_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.@-]{0,127}$")
+
+
+class AttemptExecutionError(RuntimeError):
+    """Typed phase failure for fail-closed experiment controllers."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        error_class: str,
+        error_code: str,
+        phase: str,
+        attempt_id: str | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.error_class = error_class
+        self.error_code = error_code
+        self.phase = phase
+        self.attempt_id = attempt_id
 
 
 @dataclass(frozen=True)
@@ -206,14 +253,20 @@ def policy_spec(project_root: Path, policy_id: str, version: str = "1") -> Polic
 def policy_spec_from_treatment(treatment: TreatmentSpec) -> PolicySpec:
     """Convert one immutable registry entry into an executable policy.
 
-    The Pi gym supports the native sandboxed ``bash`` interface and one narrow
-    fixed-page, read-only Unbrowser interface. Other registry descriptors fail
-    closed until a matching adapter exists.
+    The Pi gym supports the native sandboxed ``bash`` interface, one narrow
+    fixed-page read-only Unbrowser interface, and three interactive Unbrowser
+    interfaces (plain, text-first, structure-first). Other registry descriptors
+    fail closed until a matching adapter exists.
     """
 
     supported = {
         "native_bash": frozenset({"bash"}),
         UNBROWSER_TOOL_INTERFACE: frozenset({"bash", "unbrowser"}),
+        UNBROWSER_INTERACTIVE_TOOL_INTERFACE: frozenset({"bash", "unbrowser"}),
+        UNBROWSER_INTERACTIVE_TEXT_FIRST_INTERFACE: frozenset({"bash", "unbrowser"}),
+        UNBROWSER_INTERACTIVE_STRUCTURE_FIRST_INTERFACE: frozenset({"bash", "unbrowser"}),
+        UNBROWSER_SEMANTIC_TABLE_INTERFACE: frozenset({"bash", "unbrowser", "semantic_table"}),
+        UNBROWSER_SEMANTIC_FORM_INTERFACE: frozenset({"bash", "unbrowser", "semantic_form"}),
     }
     expected_tools = supported.get(treatment.tool_interface)
     if expected_tools is None:
@@ -234,7 +287,27 @@ def policy_spec_from_treatment(treatment: TreatmentSpec) -> PolicySpec:
     )
 
 
-def _run_pi(
+def _required_first_observation_from_interface(tool_interface: str) -> str | None:
+    """Return the required first observation for an interface, or None."""
+    if tool_interface == UNBROWSER_INTERACTIVE_TEXT_FIRST_INTERFACE:
+        return "text"
+    if tool_interface == UNBROWSER_INTERACTIVE_STRUCTURE_FIRST_INTERFACE:
+        return "blockmap"
+    if tool_interface == UNBROWSER_INTERACTIVE_TOOL_INTERFACE:
+        return None
+    return None
+
+
+def _semantic_capability_from_interface(tool_interface: str) -> str | None:
+    """Return the semantic capability ('table' or 'form') for an interface."""
+    if tool_interface == UNBROWSER_SEMANTIC_TABLE_INTERFACE:
+        return "table"
+    if tool_interface == UNBROWSER_SEMANTIC_FORM_INTERFACE:
+        return "form"
+    return None
+
+
+def _build_pi_command(
     project_root: Path,
     config: RemoteConfig,
     workspace: str,
@@ -247,23 +320,53 @@ def _run_pi(
     thinking: str = "off",
     unbrowser_url: str | None = None,
     unbrowser_binary: str = "/usr/local/bin/unbrowser",
-) -> subprocess.CompletedProcess[str]:
+    unbrowser_interactive: bool = False,
+    confine_unbrowser: bool = False,
+    sampling_seed: int | None = None,
+    api_key: str | None = None,
+) -> list[str]:
     # Keep the extension outside .pi/extensions so normal Pi sessions in this
     # repository never auto-discover the restrictive gym tool configuration.
     gym_extension = project_root / "pi_extensions" / "gym-tools.ts"
-    budget_extension = project_root / "pi_extensions" / "gym-budget-v2.ts"
+    budget_extension = project_root / "pi_extensions" / "gym-budget-v3.ts"
+    enforce_budget = policy.enforce_budget or policy.version in {"2", "3", "4"}
     active_tools = tuple(sorted(policy.allowed_tools))
-    unsupported_tools = set(active_tools) - {"bash", "unbrowser"}
+    unsupported_tools = set(active_tools) - {"bash", "unbrowser", "semantic_table", "semantic_form"}
     if unsupported_tools:
         raise ValueError(f"unsupported active tools: {sorted(unsupported_tools)!r}")
     if "unbrowser" in active_tools:
         if unbrowser_url is None:
             raise ValueError("an exact Unbrowser smoke URL is required")
-        validate_smoke_url(unbrowser_url)
+        if unbrowser_interactive:
+            validate_interactive_url(
+                unbrowser_url,
+                allow_fixture=unbrowser_url.startswith(FIXTURE_INTERACTIVE_ORIGIN),
+            )
+        else:
+            validate_smoke_url(unbrowser_url)
         if not unbrowser_binary.startswith("/") or "\n" in unbrowser_binary:
             raise ValueError("unbrowser binary must be an absolute remote path")
     elif unbrowser_url is not None:
         raise ValueError("Unbrowser URL supplied to a treatment without the tool")
+    if sampling_seed is not None and (
+        isinstance(sampling_seed, bool)
+        or not isinstance(sampling_seed, int)
+        or sampling_seed < 0
+        or sampling_seed > 2_147_483_647
+    ):
+        raise ValueError("sampling_seed must be an integer in [0, 2147483647]")
+    required_first_obs = _required_first_observation_from_interface(
+        policy.tool_interface
+    )
+    if required_first_obs is not None and not unbrowser_interactive:
+        raise ValueError(
+            "observation-enforced Unbrowser interfaces require an interactive task"
+        )
+    semantic_capability = _semantic_capability_from_interface(policy.tool_interface)
+    if semantic_capability is not None and not unbrowser_interactive:
+        raise ValueError(
+            "semantic capability interfaces require an interactive fixture task"
+        )
 
     command = [
         pi_executable,
@@ -286,10 +389,14 @@ def _run_pi(
         "--no-extensions",
         "--no-approve",
     ]
+    # Keyless local custom providers (Pi docs) require an explicit API key;
+    # the prompt-only pilot threads its fixed non-secret dummy key here.
+    if api_key is not None:
+        command.extend(["--api-key", api_key])
     if model_switch_extension is not None:
         command.extend(["--extension", str(model_switch_extension)])
     command.extend(["--extension", str(gym_extension)])
-    if policy.enforce_budget or policy.version in {"2", "3", "4"}:
+    if enforce_budget:
         command.extend(["--extension", str(budget_extension)])
     command.extend(
         [
@@ -317,7 +424,14 @@ def _run_pi(
             str(policy.max_output_tokens),
         ]
     )
+    if enforce_budget:
+        command.extend(
+            ["--gym-provider-turn-limit", str(policy.tool_call_limit + 1)]
+        )
+    if sampling_seed is not None:
+        command.extend(["--gym-sampling-seed", str(sampling_seed)])
     if unbrowser_url is not None:
+        unbrowser_tool_limit = 12 if unbrowser_interactive else 3
         command.extend(
             [
                 "--gym-unbrowser-url",
@@ -327,15 +441,78 @@ def _run_pi(
                 "--gym-unbrowser-timeout",
                 str(min(policy.command_timeout_seconds, 30)),
                 "--gym-unbrowser-tool-limit",
-                "3",
+                str(unbrowser_tool_limit),
             ]
         )
-    command.extend(
-        [
-            "--append-system-prompt",
-            policy.system_prompt,
-            prompt,
-        ]
+        if unbrowser_interactive:
+            command.extend(
+                [
+                    "--gym-unbrowser-interactive",
+                    "true",
+                ]
+            )
+        if required_first_obs is not None:
+            command.extend(
+                [
+                    "--gym-unbrowser-required-first-observation",
+                    required_first_obs,
+                ]
+            )
+        if confine_unbrowser:
+            command.extend(
+                [
+                    "--gym-confine-unbrowser",
+                    "true",
+                ]
+            )
+        if semantic_capability is not None:
+            command.extend(
+                [
+                    "--gym-semantic-capability",
+                    semantic_capability,
+                ]
+            )
+    if policy.system_prompt:
+        command.extend(["--append-system-prompt", policy.system_prompt])
+    command.append(prompt)
+    return command
+
+
+def _run_pi(
+    project_root: Path,
+    config: RemoteConfig,
+    workspace: str,
+    prompt: str,
+    policy: PolicySpec,
+    pi_executable: str,
+    model_switch_extension: Path | None,
+    provider: str = "ubuntu-gemma",
+    model: str = "gemma-4-26b-a4b",
+    thinking: str = "off",
+    unbrowser_url: str | None = None,
+    unbrowser_binary: str = "/usr/local/bin/unbrowser",
+    unbrowser_interactive: bool = False,
+    confine_unbrowser: bool = False,
+    sampling_seed: int | None = None,
+    api_key: str | None = None,
+) -> subprocess.CompletedProcess[str]:
+    command = _build_pi_command(
+        project_root,
+        config,
+        workspace,
+        prompt,
+        policy,
+        pi_executable,
+        model_switch_extension,
+        provider,
+        model,
+        thinking,
+        unbrowser_url,
+        unbrowser_binary,
+        unbrowser_interactive,
+        confine_unbrowser,
+        sampling_seed,
+        api_key,
     )
     return subprocess.run(
         command,
@@ -361,6 +538,10 @@ def _run_pi_checked(
     thinking: str = "off",
     unbrowser_url: str | None = None,
     unbrowser_binary: str = "/usr/local/bin/unbrowser",
+    unbrowser_interactive: bool = False,
+    confine_unbrowser: bool = False,
+    sampling_seed: int | None = None,
+    api_key: str | None = None,
 ) -> subprocess.CompletedProcess[str]:
     """Run Pi, converting a wall-clock timeout into a failed run.
 
@@ -381,6 +562,10 @@ def _run_pi_checked(
             thinking,
             unbrowser_url,
             unbrowser_binary,
+            unbrowser_interactive,
+            confine_unbrowser,
+            sampling_seed,
+            api_key,
         )
     except subprocess.TimeoutExpired as error:
 
@@ -400,7 +585,35 @@ def _run_pi_checked(
         )
 
 
-def _attempt_event_summary(config: RemoteConfig, attempt_id: str) -> dict[str, Any] | None:
+def _parse_sampling_receipt(stderr: str) -> dict[str, Any] | None:
+    for line in reversed(stderr.splitlines()):
+        if not line.startswith(_SAMPLING_RECEIPT_PREFIX):
+            continue
+        try:
+            value = json.loads(line[len(_SAMPLING_RECEIPT_PREFIX) :])
+        except json.JSONDecodeError:
+            return None
+        return value if isinstance(value, dict) else None
+    return None
+
+
+def _parse_budget_receipt(stderr: str) -> dict[str, Any] | None:
+    for line in reversed(stderr.splitlines()):
+        if not line.startswith(_BUDGET_RECEIPT_PREFIX):
+            continue
+        try:
+            value = json.loads(line[len(_BUDGET_RECEIPT_PREFIX) :])
+        except json.JSONDecodeError:
+            return None
+        return value if isinstance(value, dict) else None
+    return None
+
+
+def _attempt_event_summary(
+    config: RemoteConfig,
+    attempt_id: str,
+    budget_receipt: Mapping[str, Any] | None = None,
+) -> dict[str, Any] | None:
     """Best-effort normalized summary from the recorded Pi events (raw JSONL).
 
     ``record-events`` persists the raw JSONL at
@@ -409,8 +622,21 @@ def _attempt_event_summary(config: RemoteConfig, attempt_id: str) -> dict[str, A
     Returns ``None`` when no events were recorded or the file is unreachable.
     """
     events_path = f"{config.run_root}/attempts/{attempt_id}/pi-events.jsonl"
+    arguments = ["normalize-events", events_path]
+    if budget_receipt is not None:
+        arguments.extend(
+            [
+                "--budget-receipt-json",
+                json.dumps(
+                    dict(budget_receipt),
+                    sort_keys=True,
+                    ensure_ascii=False,
+                    separators=(",", ":"),
+                ),
+            ]
+        )
     try:
-        return remote_json(config, ["normalize-events", events_path])
+        return remote_json(config, arguments)
     except RuntimeError:
         return None
 
@@ -423,20 +649,29 @@ def _pair_order(seed: int | str, policies: Sequence[str]) -> list[str]:
 
 
 def _task_json(config: RemoteConfig, args: argparse.Namespace) -> dict[str, Any]:
-    return remote_json(
-        config,
-        [
-            "generate",
-            "--family",
-            args.family,
-            "--root",
-            config.run_root,
-            "--seed",
-            str(args.seed),
-            "--difficulty",
-            args.difficulty,
-        ],
-    )
+    arguments = [
+        "generate",
+        "--family",
+        args.family,
+        "--root",
+        config.run_root,
+        "--seed",
+        str(args.seed),
+        "--difficulty",
+        args.difficulty,
+    ]
+    if args.family == "unbrowser_fixture":
+        fixture_template = getattr(args, "fixture_template", "single_page_extraction")
+        arguments.extend(["--fixture-template", fixture_template])
+        generator_version = getattr(
+            args, "fixture_generator_version", UNBROWSER_FIXTURE_GENERATOR_VERSION
+        )
+        if generator_version != UNBROWSER_FIXTURE_GENERATOR_VERSION:
+            arguments.extend(["--fixture-generator-version", generator_version])
+    task_role = getattr(args, "task_role", None)
+    if args.family in {"unbrowser_fixture", "routing_fixture"} and task_role is not None:
+        arguments.extend(["--task-role", str(task_role)])
+    return remote_json(config, arguments)
 
 
 def _unbrowser_url_for_task(
@@ -446,14 +681,28 @@ def _unbrowser_url_for_task(
 
     if "unbrowser" not in policy.allowed_tools:
         return None
-    if task.get("family") != "unbrowser":
-        raise ValueError("the Unbrowser tool is restricted to the unbrowser family")
+    family = task.get("family")
+    if family not in {
+        "unbrowser",
+        "unbrowser_interactive",
+        "unbrowser_fixture",
+        "routing_fixture",
+    }:
+        raise ValueError(
+            "the Unbrowser tool is restricted to the unbrowser, "
+            "unbrowser_interactive, unbrowser_fixture, and routing_fixture families"
+        )
     metadata = task.get("public_metadata")
     if not isinstance(metadata, dict):
         raise ValueError("Unbrowser task public_metadata must be an object")
     url = metadata.get("allowed_url")
     if not isinstance(url, str):
         raise ValueError("Unbrowser task omitted its exact allowed_url")
+
+    if family in {"unbrowser_fixture", "routing_fixture"}:
+        return validate_interactive_url(url, allow_fixture=True)
+    if family == "unbrowser_interactive":
+        return validate_interactive_url(url)
     return validate_smoke_url(url)
 
 
@@ -467,6 +716,8 @@ def _run_attempt(
     *,
     with_usage: bool,
     registry_hash: str | None = None,
+    require_complete_event_summary: bool = False,
+    before_model_admission: Callable[[], None] | None = None,
 ) -> dict[str, Any]:
     """Prepare a fresh attempt, run the policy in Pi, record events, verify."""
     attempt_started = time.monotonic()
@@ -492,7 +743,40 @@ def _run_attempt(
         prepare_arguments.extend(
             ["--treatment-registry-hash", registry_hash]
         )
-    attempt = remote_json(config, prepare_arguments)
+    rollout_replica = getattr(args, "rollout_replica", None)
+    if rollout_replica is not None:
+        prepare_arguments.extend(["--rollout-replica", str(rollout_replica)])
+    sampling_seed = getattr(args, "sampling_seed", None)
+    if sampling_seed is not None:
+        prepare_arguments.extend(["--sampling-seed", str(sampling_seed)])
+    pilot_manifest_hash = getattr(args, "pilot_manifest_hash", None)
+    if pilot_manifest_hash is not None:
+        prepare_arguments.extend(
+            ["--pilot-manifest-hash", str(pilot_manifest_hash)]
+        )
+    pilot_panel_id = getattr(args, "pilot_panel_id", None)
+    if pilot_panel_id is not None:
+        prepare_arguments.extend(["--pilot-panel-id", str(pilot_panel_id)])
+    expected_task_commitment_hash = getattr(
+        args, "expected_task_commitment_hash", None
+    )
+    if expected_task_commitment_hash is not None:
+        prepare_arguments.extend(
+            [
+                "--expected-task-commitment-hash",
+                str(expected_task_commitment_hash),
+            ]
+        )
+    try:
+        attempt = remote_json(config, prepare_arguments)
+    except (OSError, RuntimeError, subprocess.TimeoutExpired) as error:
+        raise AttemptExecutionError(
+            f"attempt preparation failed for {attempt_id}: {error}",
+            error_class="infrastructure_invalid",
+            error_code="controller_error",
+            phase="prepare_attempt",
+            attempt_id=attempt_id,
+        ) from error
     prepare_seconds = time.monotonic() - phase_started
 
     phase_started = time.monotonic()
@@ -504,48 +788,104 @@ def _run_attempt(
         raise ValueError(
             f"model switch extension does not exist: {switch_extension}"
         )
-    completed = _run_pi_checked(
-        project_root,
-        config,
-        attempt["workspace_ref"],
-        task["prompt"],
-        policy,
-        args.pi,
-        switch_extension,
-        getattr(args, "provider", "ubuntu-gemma"),
-        getattr(args, "model", "gemma-4-26b-a4b"),
-        getattr(args, "thinking", "off"),
-        _unbrowser_url_for_task(task, policy),
-        getattr(args, "unbrowser_binary", "/usr/local/bin/unbrowser"),
-    )
+    if before_model_admission is not None:
+        before_model_admission()
+    try:
+        completed = _run_pi_checked(
+            project_root,
+            config,
+            attempt["workspace_ref"],
+            task["prompt"],
+            policy,
+            args.pi,
+            switch_extension,
+            getattr(args, "provider", "ubuntu-gemma"),
+            getattr(args, "model", "gemma-4-26b-a4b"),
+            getattr(args, "thinking", "off"),
+            _unbrowser_url_for_task(task, policy),
+            getattr(args, "unbrowser_binary", "/usr/local/bin/unbrowser"),
+            unbrowser_interactive=(
+                task.get("family")
+                in {"unbrowser_interactive", "unbrowser_fixture", "routing_fixture"}
+            ),
+            confine_unbrowser=(
+                task.get("family") in {"unbrowser_fixture", "routing_fixture"}
+            ),
+            sampling_seed=sampling_seed,
+            api_key=getattr(args, "api_key", None),
+        )
+    except (OSError, RuntimeError) as error:
+        raise AttemptExecutionError(
+            f"Pi controller failed for {attempt_id}: {error}",
+            error_class="infrastructure_invalid",
+            error_code="controller_error",
+            phase="pi_controller",
+            attempt_id=attempt_id,
+        ) from error
     pi_seconds = time.monotonic() - phase_started
+    budget_receipt = _parse_budget_receipt(completed.stderr)
 
-    record_seconds = 0.0
-    if completed.stdout.strip():
-        phase_started = time.monotonic()
+    phase_started = time.monotonic()
+    record_arguments = [
+        "record-events",
+        "--root",
+        config.run_root,
+        "--attempt-id",
+        attempt_id,
+    ]
+    if budget_receipt is not None:
+        record_arguments.extend(
+            [
+                "--budget-receipt-json",
+                json.dumps(
+                    budget_receipt,
+                    sort_keys=True,
+                    ensure_ascii=False,
+                    separators=(",", ":"),
+                ),
+            ]
+        )
+    try:
         remote_json(
             config,
-            ["record-events", "--root", config.run_root, "--attempt-id", attempt_id],
+            record_arguments,
             input_text=completed.stdout,
         )
-        record_seconds = time.monotonic() - phase_started
+    except (OSError, RuntimeError, subprocess.TimeoutExpired) as error:
+        raise AttemptExecutionError(
+            f"event recording failed for {attempt_id}: {error}",
+            error_class="infrastructure_invalid",
+            error_code="controller_error",
+            phase="record_events",
+            attempt_id=attempt_id,
+        ) from error
+    record_seconds = time.monotonic() - phase_started
     # Verification always runs, even when Pi failed, so the final workspace is
     # inspected and reported; a failed verification never suppresses the report.
     phase_started = time.monotonic()
-    verification = remote_json(
-        config,
-        [
-            "verify",
-            "--family",
-            args.family,
-            "--root",
-            config.run_root,
-            "--task-id",
-            task["id"],
-            "--attempt-id",
-            attempt_id,
-        ],
-    )
+    try:
+        verification = remote_json(
+            config,
+            [
+                "verify",
+                "--family",
+                args.family,
+                "--root",
+                config.run_root,
+                "--task-id",
+                task["id"],
+                "--attempt-id",
+                attempt_id,
+            ],
+        )
+    except (OSError, RuntimeError, subprocess.TimeoutExpired) as error:
+        raise AttemptExecutionError(
+            f"verifier failed for {attempt_id}: {error}",
+            error_class="verifier_invalid",
+            error_code="verifier_crash",
+            phase="verify",
+            attempt_id=attempt_id,
+        ) from error
     verify_seconds = time.monotonic() - phase_started
     result = {
         "task_id": task["id"],
@@ -553,13 +893,22 @@ def _run_attempt(
         "policy": policy.to_dict(),
         "pi_return_code": completed.returncode,
         "pi_stderr": completed.stderr[-4000:],
+        "sampling_receipt": _parse_sampling_receipt(completed.stderr),
         "verification": verification,
     }
     usage_seconds = 0.0
     if with_usage:
         phase_started = time.monotonic()
-        event_summary = _attempt_event_summary(config, attempt_id)
+        event_summary = _attempt_event_summary(config, attempt_id, budget_receipt)
         usage_seconds = time.monotonic() - phase_started
+        if require_complete_event_summary and not isinstance(event_summary, dict):
+            raise AttemptExecutionError(
+                f"normalized event summary is unavailable for {attempt_id}",
+                error_class="infrastructure_invalid",
+                error_code="controller_error",
+                phase="normalize_events",
+                attempt_id=attempt_id,
+            )
         usage = event_summary.get("usage") if isinstance(event_summary, dict) else None
         result["usage"] = usage if isinstance(usage, dict) else None
         if isinstance(event_summary, dict):
@@ -575,19 +924,42 @@ def _run_attempt(
                 )
                 tool_trace.append(
                     {
+                        "tool_call_id": execution.get("tool_call_id"),
                         "tool_name": execution.get("tool_name"),
                         "is_error": execution.get("is_error", False),
+                        "budget_rejected": execution.get(
+                            "budget_rejected", False
+                        ),
+                        "operation_aborted": execution.get(
+                            "operation_aborted", False
+                        ),
+                        "pre_execution_rejected": execution.get(
+                            "pre_execution_rejected", False
+                        ),
                         "details": details if isinstance(details, dict) else None,
                     }
                 )
             result["trajectory"] = {
+                "normalizer_schema_version": event_summary.get("schema_version"),
+                "provider_turn_semantics": event_summary.get(
+                    "provider_turn_semantics"
+                ),
+                "budget_receipt": event_summary.get("budget_receipt"),
+                "assistant_message_count": event_summary.get(
+                    "assistant_message_count"
+                ),
                 "provider_turn_count": event_summary.get("provider_turn_count"),
+                "provider_turns": event_summary.get("provider_turns"),
+                "synthetic_assistant_message_count": event_summary.get(
+                    "synthetic_assistant_message_count"
+                ),
                 "tool_call_count": event_summary.get("tool_call_count"),
                 "tool_limit_rejection_count": event_summary.get(
                     "tool_limit_rejection_count"
                 ),
                 "length_stop_count": event_summary.get("length_stop_count"),
                 "stop_reasons": event_summary.get("stop_reasons"),
+                "planning_preamble": event_summary.get("planning_preamble"),
                 "tool_trace": tool_trace,
             }
     result["timing"] = {
@@ -604,12 +976,21 @@ def _run_attempt(
 def run_single(
     project_root: Path, config: RemoteConfig, args: argparse.Namespace
 ) -> dict[str, Any]:
-    if args.family == "unbrowser":
+    if args.family in {"unbrowser", "unbrowser_interactive", "unbrowser_fixture", "routing_fixture"}:
         raise ValueError(
-            "the unbrowser family requires a registered read-only Unbrowser treatment"
+            "the unbrowser, unbrowser_interactive, unbrowser_fixture, and "
+            "routing_fixture families require a registered treatment"
         )
     policy = policy_spec(project_root, args.policy, getattr(args, "policy_version", "1"))
-    task = _task_json(config, args)
+    try:
+        task = _task_json(config, args)
+    except (OSError, RuntimeError, subprocess.TimeoutExpired) as error:
+        raise AttemptExecutionError(
+            f"task generation failed: {error}",
+            error_class="infrastructure_invalid",
+            error_code="controller_error",
+            phase="generate_task",
+        ) from error
     attempt_id = args.attempt_id or f"smoke-{policy.id}-{uuid.uuid4().hex[:12]}"
     return _run_attempt(project_root, config, task, policy, attempt_id, args, with_usage=False)
 
@@ -622,9 +1003,10 @@ def run_pair(
     The task is generated once; the policies share it. Execution order is
     randomized deterministically from the seed.
     """
-    if args.family == "unbrowser":
+    if args.family in {"unbrowser", "unbrowser_interactive", "unbrowser_fixture", "routing_fixture"}:
         raise ValueError(
-            "the unbrowser family requires registered read-only Unbrowser treatments"
+            "the unbrowser, unbrowser_interactive, unbrowser_fixture, and "
+            "routing_fixture families require registered treatments"
         )
     policy_version = getattr(args, "policy_version", "1")
     policies = {
@@ -643,21 +1025,96 @@ def _run_policy_set(
     mode: str,
     registry_hash: str | None = None,
 ) -> dict[str, Any]:
-    """Execute an arbitrary fixed treatment menu on one generated task."""
+    """Execute an arbitrary fixed treatment menu on one generated task.
+
+    When ``args.attempt_ids_by_treatment`` is supplied it must be a mapping
+    whose keys exactly equal the selected treatment (bundle) ids and whose
+    values are safe, unique attempt ids.  Those ids are used verbatim instead
+    of generated UUIDs.
+    """
 
     if not policies:
         raise ValueError("at least one policy treatment is required")
-    task = _task_json(config, args)
+    try:
+        task = _task_json(config, args)
+    except (OSError, RuntimeError, subprocess.TimeoutExpired) as error:
+        raise AttemptExecutionError(
+            f"task generation failed: {error}",
+            error_class="infrastructure_invalid",
+            error_code="controller_error",
+            phase="generate_task",
+        ) from error
+    task_commitments: dict[str, str] | None = None
+    if task.get("family") == "routing_fixture":
+        allowed_url = task.get("public_metadata", {}).get("allowed_url")
+        if not isinstance(allowed_url, str):
+            raise ValueError("routing fixture task omitted allowed_url")
+        try:
+            commitment = remote_json(
+                config,
+                [
+                    "routing-commitment",
+                    "--url",
+                    allowed_url,
+                ],
+            )
+        except (OSError, RuntimeError, subprocess.TimeoutExpired) as error:
+            raise AttemptExecutionError(
+                f"routing fixture commitment failed: {error}",
+                error_class="infrastructure_invalid",
+                error_code="controller_error",
+                phase="routing_commitment",
+            ) from error
+        required = (
+            "source_sha256",
+            "probe_features_sha256",
+            "probe_receipt_sha256",
+        )
+        if not isinstance(commitment, Mapping) or any(
+            not isinstance(commitment.get(field), str) for field in required
+        ):
+            raise ValueError("routing fixture commitment response is malformed")
+        task_commitments = {field: str(commitment[field]) for field in required}
+    attempt_ids_by_treatment = getattr(args, "attempt_ids_by_treatment", None)
+    if attempt_ids_by_treatment is not None:
+        if not isinstance(attempt_ids_by_treatment, Mapping):
+            raise ValueError(
+                "attempt_ids_by_treatment must be a mapping of treatment id "
+                "to attempt id"
+            )
+        supplied = set(attempt_ids_by_treatment)
+        selected = set(policies)
+        if supplied != selected:
+            raise ValueError(
+                "attempt_ids_by_treatment keys must exactly equal the selected "
+                f"treatments; got {sorted(supplied)!r}, expected {sorted(selected)!r}"
+            )
+        attempt_id_values: list[str] = []
+        for treatment_ref, attempt_id in attempt_ids_by_treatment.items():
+            if not isinstance(attempt_id, str) or not _ATTEMPT_ID.fullmatch(attempt_id):
+                raise ValueError(
+                    f"invalid attempt id for treatment {treatment_ref!r}: {attempt_id!r}"
+                )
+            attempt_id_values.append(attempt_id)
+        if len(set(attempt_id_values)) != len(attempt_id_values):
+            raise ValueError("attempt_ids_by_treatment values must be unique")
+
     policy_versions = {policy.version for policy in policies.values()}
-    order_key: int | str = (
-        task["id"] if policy_versions != {"1"} or mode != "pair" else args.seed
-    )
-    execution_order = _pair_order(order_key, list(policies))
+    if getattr(args, "preserve_treatment_order", False):
+        execution_order = list(policies)
+    else:
+        order_key: int | str = (
+            task["id"] if policy_versions != {"1"} or mode != "pair" else args.seed
+        )
+        execution_order = _pair_order(order_key, list(policies))
     attempts: list[tuple[str, dict[str, Any]]] = []
     for treatment_ref in execution_order:
         policy = policies[treatment_ref]
-        prefix = "pair" if mode == "pair" else "treatment"
-        attempt_id = f"{prefix}-{policy.id}-{uuid.uuid4().hex[:12]}"
+        if attempt_ids_by_treatment is not None:
+            attempt_id = attempt_ids_by_treatment[treatment_ref]
+        else:
+            prefix = "pair" if mode == "pair" else "treatment"
+            attempt_id = f"{prefix}-{policy.id}-{uuid.uuid4().hex[:12]}"
         attempts.append(
             (
                 treatment_ref,
@@ -670,6 +1127,9 @@ def _run_policy_set(
                     args,
                     with_usage=True,
                     registry_hash=registry_hash,
+                    require_complete_event_summary=(
+                        task.get("family") == "routing_fixture"
+                    ),
                 ),
             )
         )
@@ -683,6 +1143,7 @@ def _run_policy_set(
                 "policy": attempt["policy"],
                 "pi_return_code": attempt["pi_return_code"],
                 "pi_stderr": attempt["pi_stderr"],
+                "sampling_receipt": attempt.get("sampling_receipt"),
                 "verification": attempt["verification"],
                 "usage": attempt.get("usage"),
                 "trajectory": attempt.get("trajectory"),
@@ -693,6 +1154,17 @@ def _run_policy_set(
     }
     if registry_hash is not None:
         result["treatment_registry_hash"] = registry_hash
+    if task_commitments is not None:
+        result["task_commitments"] = task_commitments
+    for field in (
+        "rollout_replica",
+        "sampling_seed",
+        "pilot_manifest_hash",
+        "pilot_panel_id",
+    ):
+        value = getattr(args, field, None)
+        if value is not None:
+            result[field] = value
     return result
 
 
@@ -740,27 +1212,42 @@ def run_registered_treatments(
             raise ValueError(f"unknown treatment reference: {reference!r}") from error
         if treatment.bundle_id in selected:
             raise ValueError(f"duplicate treatment selection: {reference!r}")
+        if (
+            treatment.generator_metadata.get("execution_path")
+            == RESTRICTED_BASELINE_EXECUTION_PATH
+        ):
+            raise ValueError(
+                "the empty-overlay baseline treatment requires its dedicated "
+                "hash-authorized runner"
+            )
         selected[treatment.bundle_id] = policy_spec_from_treatment(treatment)
     has_unbrowser = {
         reference: "unbrowser" in policy.allowed_tools
         for reference, policy in selected.items()
     }
     family = getattr(args, "family", "artifact")
-    if family == "unbrowser" and not all(has_unbrowser.values()):
+    unbrowser_families = {
+        "unbrowser",
+        "unbrowser_interactive",
+        "unbrowser_fixture",
+        "routing_fixture",
+    }
+    if family in unbrowser_families and not all(has_unbrowser.values()):
         missing = sorted(
             reference for reference, enabled in has_unbrowser.items() if not enabled
         )
         raise ValueError(
-            "the unbrowser family requires the read-only Unbrowser tool in every "
+            f"the {family} family requires the Unbrowser tool in every "
             f"treatment; missing from {missing!r}"
         )
-    if family != "unbrowser" and any(has_unbrowser.values()):
+    if family not in unbrowser_families and any(has_unbrowser.values()):
         enabled = sorted(
             reference for reference, value in has_unbrowser.items() if value
         )
         raise ValueError(
-            "read-only Unbrowser treatments are restricted to the unbrowser "
-            f"family; present in {enabled!r}"
+            "Unbrowser treatments are restricted to the unbrowser, "
+            "unbrowser_interactive, unbrowser_fixture, and routing_fixture "
+            f"families; present in {enabled!r}"
         )
     return _run_policy_set(
         project_root,
@@ -826,7 +1313,8 @@ def build_parser() -> argparse.ArgumentParser:
         default=os.environ.get(
             "PYREPLAB_REMOTE_UNBROWSER", "/usr/local/bin/unbrowser"
         ),
-        help="absolute Unbrowser binary path on the disposable remote runner",
+        help="absolute Unbrowser binary path on the disposable remote runner "
+        "(filesystem confinement isolates the process, not URL/network)",
     )
     parser.add_argument("--pi", default=os.environ.get("PYREPLAB_PI", "pi"))
     parser.add_argument(
@@ -865,7 +1353,30 @@ def build_parser() -> argparse.ArgumentParser:
         "--seed",
     )
     parser.add_argument("--seed", type=int, default=7)
+    parser.add_argument(
+        "--sampling-seed",
+        type=int,
+        default=None,
+        help="optional deterministic provider sampling seed",
+    )
     parser.add_argument("--difficulty", choices=["easy", "medium", "hard"], default="medium")
+    parser.add_argument(
+        "--fixture-template",
+        choices=_FIXTURE_TEMPLATES,
+        default="single_page_extraction",
+        help="fixture page template (only used when --family is unbrowser_fixture)",
+    )
+    parser.add_argument(
+        "--task-role",
+        default=None,
+        help="frozen task role such as T_canary (unbrowser_fixture and routing_fixture only)",
+    )
+    parser.add_argument(
+        "--fixture-generator-version",
+        choices=_FIXTURE_GENERATOR_VERSIONS,
+        default=UNBROWSER_FIXTURE_GENERATOR_VERSION,
+        help="task generator version (only used when --family is unbrowser_fixture)",
+    )
     parser.add_argument("--attempt-id")
     parser.add_argument(
         "--treatment-registry",

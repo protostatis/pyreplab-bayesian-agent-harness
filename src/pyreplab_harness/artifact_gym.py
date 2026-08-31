@@ -217,15 +217,59 @@ def prepare_attempt(
     policy_version: str = "1",
     treatment_bundle_hash: str | None = None,
     treatment_registry_hash: str | None = None,
+    rollout_replica: int | None = None,
+    sampling_seed: int | None = None,
+    pilot_manifest_hash: str | None = None,
+    pilot_panel_id: str | None = None,
+    expected_task_commitment_hash: str | None = None,
 ) -> AttemptRecord:
     root_path = _root(root)
     spec = load_task(root_path, task_id)
     attempt_path = _attempt_dir(root_path, attempt_id)
     if attempt_path.exists():
         raise FileExistsError(f"attempt already exists: {attempt_id}")
+    if rollout_replica is not None and (
+        isinstance(rollout_replica, bool)
+        or not isinstance(rollout_replica, int)
+        or rollout_replica < 0
+    ):
+        raise ValueError("rollout_replica must be a non-negative integer")
+    if sampling_seed is not None and (
+        isinstance(sampling_seed, bool)
+        or not isinstance(sampling_seed, int)
+        or sampling_seed < 0
+        or sampling_seed > 2_147_483_647
+    ):
+        raise ValueError("sampling_seed must be an integer in [0, 2147483647]")
     workspace = attempt_path / "workspace"
     attempt_path.mkdir(parents=True)
-    shutil.copytree(spec.workspace_ref, workspace)
+    oracle_snapshot_ref: str | None = None
+    oracle_snapshot_sha256: str | None = None
+    try:
+        shutil.copytree(spec.workspace_ref, workspace)
+        if expected_task_commitment_hash is not None:
+            from .unbrowser_fixture_gym import (
+                unbrowser_fixture_snapshot_commitment,
+                unbrowser_fixture_task_commitment,
+            )
+
+            source_commitment = unbrowser_fixture_task_commitment(
+                root_path, task_id
+            )
+            if source_commitment["commitment_hash"] != expected_task_commitment_hash:
+                raise ValueError("fixture task commitment mismatch before snapshot")
+            oracle_snapshot = attempt_path / "oracle.snapshot.json"
+            shutil.copy2(spec.verifier_ref, oracle_snapshot)
+            snapshot_commitment = unbrowser_fixture_snapshot_commitment(
+                spec, workspace, oracle_snapshot
+            )
+            if snapshot_commitment != source_commitment:
+                raise ValueError("fixture task changed while snapshotting attempt")
+            oracle_snapshot_ref = str(oracle_snapshot)
+            oracle_snapshot_sha256 = str(snapshot_commitment["oracle_sha256"])
+    except Exception:
+        shutil.rmtree(attempt_path, ignore_errors=True)
+        raise
     record = AttemptRecord(
         attempt_id=attempt_id,
         task_id=task_id,
@@ -235,6 +279,13 @@ def prepare_attempt(
         created_at=datetime.now(UTC).isoformat(),
         treatment_bundle_hash=treatment_bundle_hash,
         treatment_registry_hash=treatment_registry_hash,
+        rollout_replica=rollout_replica,
+        sampling_seed=sampling_seed,
+        pilot_manifest_hash=pilot_manifest_hash,
+        pilot_panel_id=pilot_panel_id,
+        task_commitment_hash=expected_task_commitment_hash,
+        oracle_snapshot_ref=oracle_snapshot_ref,
+        oracle_snapshot_sha256=oracle_snapshot_sha256,
     )
     write_json(attempt_path / "attempt.json", record.to_dict())
     return record

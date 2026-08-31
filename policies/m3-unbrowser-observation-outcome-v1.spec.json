@@ -1,0 +1,88 @@
+{
+  "policy_bundle_ids": [
+    "ub-decompose-text_first-submit_directly-diagnose_retry_once-expanded@3-observation-enforced-08ffb871",
+    "ub-decompose-structure_first-submit_directly-diagnose_retry_once-expanded@3-observation-enforced-be2ac70a"
+  ],
+  "protocol": {
+    "claim_boundary": "screening_futility_only",
+    "decision_rule": {
+      "maximum_discordant_cells": 1,
+      "minimum_stable_structure_only_tasks": 1,
+      "minimum_stable_text_only_tasks": 1
+    },
+    "mechanism": {
+      "combined_navigation_observation_tool_call": true,
+      "later_cross_modal_observations_allowed": true,
+      "name": "auto_delivered_first_observation",
+      "receipt_schema_version": "pyreplab-required-first-observation-v1",
+      "text_selector": "body"
+    },
+    "parent_bundle_ids": {
+      "structure_first": "ub-decompose-structure_first-submit_directly-diagnose_retry_once-expanded@2-e7e84c83",
+      "text_first": "ub-decompose-text_first-submit_directly-diagnose_retry_once-expanded@2-439044f8"
+    },
+    "run_policy": {
+      "early_outcome_stop": false,
+      "outcome_driven_replacement": false
+    },
+    "schema_version": "m3-observation-canary-protocol-v1",
+    "stage": "outcome_screen",
+    "task_selection": {
+      "boundary": "Targeted confirmation on families suggested by prior excluded screens; not a population sample or family-effect estimate.",
+      "seed_rule": "six fresh sequential seeds reserved before mechanics or outcome execution",
+      "templates": [
+        "table_filter_sort",
+        "search_filter_controls",
+        "form_entry_validation"
+      ]
+    }
+  },
+  "purpose": "Screen for repeat-stable bidirectional task niches after mechanically enforcing the first observation modality.",
+  "remote_identity": {
+    "host": "ubuntu-local",
+    "project": "/home/zhimin90/Projects/pyreplab_bayesian_agent_harness",
+    "python": "python3",
+    "run_root": "/home/zhimin90/Projects/pyreplab_bayesian_agent_harness/.runs/m3-observation-outcome-20260811-v1"
+  },
+  "rollout_replicas": 2,
+  "sampling_seed_start": 1900002001,
+  "schedule_seed": 2026081102,
+  "screen_id": "m3-observation-outcome-20260811-v1",
+  "selection": {
+    "boundary": "Screening/futility only; no causal, allocator-effectiveness, or task-family claim.",
+    "source": "Fresh coordinates not present in repository or existing local run artifacts as of freeze."
+  },
+  "task_role": "T_canary",
+  "tasks": [
+    {
+      "difficulty": "easy",
+      "seed": 2026086001,
+      "template": "table_filter_sort"
+    },
+    {
+      "difficulty": "hard",
+      "seed": 2026086002,
+      "template": "table_filter_sort"
+    },
+    {
+      "difficulty": "easy",
+      "seed": 2026086003,
+      "template": "search_filter_controls"
+    },
+    {
+      "difficulty": "medium",
+      "seed": 2026086004,
+      "template": "search_filter_controls"
+    },
+    {
+      "difficulty": "easy",
+      "seed": 2026086005,
+      "template": "form_entry_validation"
+    },
+    {
+      "difficulty": "medium",
+      "seed": 2026086006,
+      "template": "form_entry_validation"
+    }
+  ]
+}

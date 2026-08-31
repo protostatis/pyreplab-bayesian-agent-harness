@@ -1,10 +1,11 @@
 """Public registry and dispatch for the verifiable gym families.
 
 Canonical family names are ``artifact``, ``sqlite``, ``shell`` and
-``python_repair``, plus the narrow live ``unbrowser`` smoke family. Generation
-and verification delegate to the per-family modules; attempts are prepared
-with the generic
-``artifact_gym.prepare_attempt`` helper that every family already shares.
+``python_repair``, plus the narrow live ``unbrowser`` smoke family and the
+interactive ``unbrowser_interactive`` plumbing spike. Generation and
+verification delegate to the per-family modules; attempts are prepared with
+the generic ``artifact_gym.prepare_attempt`` helper that every family already
+shares.
 
 Unknown family names fail with a ``ValueError`` that lists the valid names.
 """
@@ -22,9 +23,22 @@ from .artifact_gym import (
 )
 from .contracts import AttemptRecord, TaskSpec, VerificationResult
 from .python_repair_gym import generate_python_repair_task, verify_python_repair_attempt
+from .routing_fixture_gym import (
+    generate_routing_fixture_task,
+    verify_routing_fixture_attempt,
+)
 from .shell_gym import generate_shell_task, verify_shell_attempt
 from .sqlite_gym import generate_sqlite_task, verify_sqlite_attempt
 from .unbrowser_gym import generate_unbrowser_task, verify_unbrowser_attempt
+from .unbrowser_interactive_gym import (
+    generate_unbrowser_interactive_task,
+    verify_unbrowser_interactive_attempt,
+)
+from .unbrowser_fixture_gym import (
+    GENERATOR_VERSION as UNBROWSER_FIXTURE_GENERATOR_VERSION,
+    generate_unbrowser_fixture_task,
+    verify_unbrowser_fixture_attempt,
+)
 
 #: Canonical family names, in a stable display order.
 FAMILIES: tuple[str, ...] = (
@@ -33,6 +47,9 @@ FAMILIES: tuple[str, ...] = (
     "shell",
     "python_repair",
     "unbrowser",
+    "unbrowser_interactive",
+    "unbrowser_fixture",
+    "routing_fixture",
 )
 
 _REGISTRY: dict[str, dict[str, Callable[..., Any]]] = {
@@ -56,6 +73,18 @@ _REGISTRY: dict[str, dict[str, Callable[..., Any]]] = {
         "generate": generate_unbrowser_task,
         "verify": verify_unbrowser_attempt,
     },
+    "unbrowser_interactive": {
+        "generate": generate_unbrowser_interactive_task,
+        "verify": verify_unbrowser_interactive_attempt,
+    },
+    "unbrowser_fixture": {
+        "generate": generate_unbrowser_fixture_task,
+        "verify": verify_unbrowser_fixture_attempt,
+    },
+    "routing_fixture": {
+        "generate": generate_routing_fixture_task,
+        "verify": verify_routing_fixture_attempt,
+    },
 }
 
 
@@ -68,10 +97,38 @@ def _lookup(family: str) -> dict[str, Callable[..., Any]]:
 
 
 def generate_task(
-    family: str, root: str | Path, seed: int, difficulty: str = "medium"
+    family: str,
+    root: str | Path,
+    seed: int,
+    difficulty: str = "medium",
+    fixture_template: str = "single_page_extraction",
+    task_role: str | None = None,
+    fixture_generator_version: str = UNBROWSER_FIXTURE_GENERATOR_VERSION,
 ) -> TaskSpec:
-    """Generate a deterministic task of ``family`` under ``root``."""
-    return _lookup(family)["generate"](root, seed, difficulty)
+    """Generate a deterministic task of ``family`` under ``root``.
+
+    ``fixture_template`` is only honoured when ``family`` is
+    ``unbrowser_fixture``; for every other family it is silently ignored.
+    ``task_role`` is only honoured by ``unbrowser_fixture`` and
+    ``routing_fixture``.
+    """
+    generate_fn = _lookup(family)["generate"]
+    if family == "unbrowser_fixture":
+        return generate_fn(
+            root,
+            seed,
+            difficulty,
+            template=fixture_template,
+            task_role=task_role,
+            generator_version=fixture_generator_version,
+        )
+    if family == "routing_fixture":
+        return generate_fn(root, seed, difficulty, task_role=task_role)
+    if task_role is not None:
+        raise ValueError(
+            "task_role is only supported for unbrowser_fixture and routing_fixture"
+        )
+    return generate_fn(root, seed, difficulty)
 
 
 def verify_attempt(

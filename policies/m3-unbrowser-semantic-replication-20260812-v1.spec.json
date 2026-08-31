@@ -1,0 +1,172 @@
+{
+  "policy_bundle_ids": [
+    "ub-direct-semantic-table-submit-directly-diagnose-retry-expanded@1-canary-excluded-c618fe8c",
+    "ub-direct-semantic-form-submit-directly-diagnose-retry-expanded@1-canary-excluded-d9b3e25a"
+  ],
+  "protocol": {
+    "claim_boundary": "screening_futility_only",
+    "dataset_contract": {
+      "contract_hash": "1c41142e78af868aa5fbb25bfb832706419e580ebdc6d2528d3d0cfd3e291af6",
+      "governance_role": "canary_excluded",
+      "schema_version": "m3-semantic-dataset-contract-v1"
+    },
+    "decision_rule": {
+      "maximum_adverse_form_tasks": 1,
+      "maximum_adverse_table_tasks": 1,
+      "maximum_discordant_cells": 4,
+      "minimum_favorable_form_tasks": 7,
+      "minimum_favorable_table_tasks": 7,
+      "minimum_stable_form_only_tasks": 2,
+      "minimum_stable_table_only_tasks": 2
+    },
+    "mechanics_qualification": {
+      "decision": "mechanics_pass",
+      "mechanics_gate_sha256": "1ac8b58aaf4a4502d307a52e01108baef445ebe5d2a8e58dbe0f3e0b70159f4f",
+      "mechanics_manifest_hash": "61a16b77953d302fb83bc9c95ebe4c86fb479fe86ed2bdee3c56cb57ecc3e3b7"
+    },
+    "mechanism": {
+      "name": "controller_owned_public_html_semantic_operation",
+      "receipt_schema_version": "pyreplab-semantic-specialist-receipt-v1"
+    },
+    "parent_bundle_ids": {
+      "form_specialist": "ub-direct-text_first-submit_directly-diagnose_retry_once-lean@2-b153007b",
+      "table_specialist": "ub-direct-text_first-submit_directly-diagnose_retry_once-lean@2-b153007b"
+    },
+    "run_policy": {
+      "early_outcome_stop": false,
+      "outcome_driven_replacement": false
+    },
+    "schema_version": "m3-semantic-capability-protocol-v2",
+    "stage": "replication_screen",
+    "task_groups": {
+      "form": [
+        "unbrowser-fixture-v2-form_entry_validation-easy-2026087209",
+        "unbrowser-fixture-v2-form_entry_validation-medium-2026087210",
+        "unbrowser-fixture-v2-form_entry_validation-hard-2026087211",
+        "unbrowser-fixture-v2-form_entry_validation-medium-2026087212",
+        "unbrowser-fixture-v2-form_entry_validation-easy-2026087213",
+        "unbrowser-fixture-v2-form_entry_validation-medium-2026087214",
+        "unbrowser-fixture-v2-form_entry_validation-hard-2026087215",
+        "unbrowser-fixture-v2-form_entry_validation-medium-2026087216"
+      ],
+      "table": [
+        "unbrowser-fixture-v2-table_filter_sort-easy-2026087201",
+        "unbrowser-fixture-v2-table_filter_sort-medium-2026087202",
+        "unbrowser-fixture-v2-table_filter_sort-hard-2026087203",
+        "unbrowser-fixture-v2-table_filter_sort-medium-2026087204",
+        "unbrowser-fixture-v2-table_filter_sort-easy-2026087205",
+        "unbrowser-fixture-v2-table_filter_sort-medium-2026087206",
+        "unbrowser-fixture-v2-table_filter_sort-hard-2026087207",
+        "unbrowser-fixture-v2-table_filter_sort-medium-2026087208"
+      ]
+    },
+    "task_selection": {
+      "boundary": "Targeted replication on fresh instances of the same two synthetic fixture templates; not a population sample.",
+      "difficulty_balance_per_family": {
+        "easy": 2,
+        "hard": 2,
+        "medium": 4
+      },
+      "seed_rule": "sixteen fresh sequential seeds frozen in the dataset contract before mechanics execution"
+    }
+  },
+  "purpose": "Replicate repeat-stable complementary table and form specialist niches and produce an audit-ready 96-cell excluded dataset.",
+  "remote_identity": {
+    "host": "ubuntu-local",
+    "project": "/home/zhimin90/Projects/pyreplab_bayesian_agent_harness",
+    "python": "python3",
+    "run_root": "/home/zhimin90/Projects/pyreplab_bayesian_agent_harness/.runs/m3-semantic-replication-20260812-v1"
+  },
+  "rollout_replicas": 3,
+  "sampling_seed_start": 1900005001,
+  "schedule_seed": 2026081206,
+  "screen_id": "m3-semantic-replication-20260812-v1",
+  "selection": {
+    "boundary": "Replication and dataset collection only; no allocator, causal, or broad task-family claim.",
+    "dataset_contract_file": "m3-unbrowser-semantic-replication-20260812-v1.dataset-contract.json",
+    "mechanics_gate": "m3-semantic-replication-mechanics-20260812-v1 mechanics_pass"
+  },
+  "task_role": "T_canary",
+  "tasks": [
+    {
+      "difficulty": "easy",
+      "seed": 2026087201,
+      "template": "table_filter_sort"
+    },
+    {
+      "difficulty": "medium",
+      "seed": 2026087202,
+      "template": "table_filter_sort"
+    },
+    {
+      "difficulty": "hard",
+      "seed": 2026087203,
+      "template": "table_filter_sort"
+    },
+    {
+      "difficulty": "medium",
+      "seed": 2026087204,
+      "template": "table_filter_sort"
+    },
+    {
+      "difficulty": "easy",
+      "seed": 2026087205,
+      "template": "table_filter_sort"
+    },
+    {
+      "difficulty": "medium",
+      "seed": 2026087206,
+      "template": "table_filter_sort"
+    },
+    {
+      "difficulty": "hard",
+      "seed": 2026087207,
+      "template": "table_filter_sort"
+    },
+    {
+      "difficulty": "medium",
+      "seed": 2026087208,
+      "template": "table_filter_sort"
+    },
+    {
+      "difficulty": "easy",
+      "seed": 2026087209,
+      "template": "form_entry_validation"
+    },
+    {
+      "difficulty": "medium",
+      "seed": 2026087210,
+      "template": "form_entry_validation"
+    },
+    {
+      "difficulty": "hard",
+      "seed": 2026087211,
+      "template": "form_entry_validation"
+    },
+    {
+      "difficulty": "medium",
+      "seed": 2026087212,
+      "template": "form_entry_validation"
+    },
+    {
+      "difficulty": "easy",
+      "seed": 2026087213,
+      "template": "form_entry_validation"
+    },
+    {
+      "difficulty": "medium",
+      "seed": 2026087214,
+      "template": "form_entry_validation"
+    },
+    {
+      "difficulty": "hard",
+      "seed": 2026087215,
+      "template": "form_entry_validation"
+    },
+    {
+      "difficulty": "medium",
+      "seed": 2026087216,
+      "template": "form_entry_validation"
+    }
+  ]
+}

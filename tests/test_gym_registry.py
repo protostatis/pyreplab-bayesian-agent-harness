@@ -17,13 +17,31 @@ from pyreplab_harness.orchestrator import (
     build_parser,
     run_smoke,
 )
+from pyreplab_harness.routing_fixtures import build_stage_b_design
+
+
+def _routing_fixture_seed(difficulty: str = "easy") -> int:
+    """Return a valid frozen Stage-B seed for the requested difficulty."""
+    for coord in build_stage_b_design():
+        if coord["difficulty"] == difficulty:
+            return coord["seed"]
+    raise AssertionError(f"no Stage-B coordinate with difficulty {difficulty!r}")
 
 
 class RegistryTest(unittest.TestCase):
     def test_canonical_families(self) -> None:
         self.assertEqual(
             FAMILIES,
-            ("artifact", "sqlite", "shell", "python_repair", "unbrowser"),
+            (
+                "artifact",
+                "sqlite",
+                "shell",
+                "python_repair",
+                "unbrowser",
+                "unbrowser_interactive",
+                "unbrowser_fixture",
+                "routing_fixture",
+            ),
         )
 
     def test_generate_task_rejects_unknown_family(self) -> None:
@@ -42,7 +60,13 @@ class RegistryTest(unittest.TestCase):
         for family in FAMILIES:
             with self.subTest(family=family):
                 with tempfile.TemporaryDirectory() as directory:
-                    task = generate_task(family, directory, 42, "easy")
+                    seed = 42
+                    difficulty = "easy"
+                    if family == "routing_fixture":
+                        # routing_fixture selects an exact frozen Stage-B
+                        # coordinate by seed, so seed 42 is not valid.
+                        seed = _routing_fixture_seed("easy")
+                    task = generate_task(family, directory, seed, difficulty)
                     self.assertEqual(task.family, family)
                     self.assertEqual(task.difficulty, "easy")
                     attempt = prepare_attempt(
@@ -188,6 +212,194 @@ class RegistryTest(unittest.TestCase):
             result = json.loads(buffer.getvalue())
             self.assertFalse(result["success"])
 
+    def test_cli_generate_passes_fixture_template_to_unbrowser_fixture(self) -> None:
+        """--fixture-template reaches the generated task's public_metadata."""
+        with tempfile.TemporaryDirectory() as directory:
+            buffer = io.StringIO()
+            with redirect_stdout(buffer):
+                code = cli_main(
+                    [
+                        "generate",
+                        "--family",
+                        "unbrowser_fixture",
+                        "--root",
+                        directory,
+                        "--seed",
+                        "42",
+                        "--difficulty",
+                        "easy",
+                        "--fixture-template",
+                        "table_filter_sort",
+                    ]
+                )
+            self.assertEqual(code, 0)
+            task = json.loads(buffer.getvalue())
+            self.assertEqual(task["family"], "unbrowser_fixture")
+            self.assertEqual(task["template_id"], "table_filter_sort")
+            metadata = task["public_metadata"]
+            self.assertEqual(metadata["template"], "table_filter_sort")
+            self.assertIn("table_filter_sort", metadata["fixture_url"])
+
+    def test_cli_generate_ignores_fixture_template_for_non_fixture_families(self) -> None:
+        """--fixture-template is silently ignored for non-fixture families."""
+        with tempfile.TemporaryDirectory() as directory:
+            buffer = io.StringIO()
+            with redirect_stdout(buffer):
+                code = cli_main(
+                    [
+                        "generate",
+                        "--family",
+                        "artifact",
+                        "--root",
+                        directory,
+                        "--seed",
+                        "7",
+                        "--difficulty",
+                        "easy",
+                        "--fixture-template",
+                        "cross_page_comparison",
+                    ]
+                )
+            self.assertEqual(code, 0)
+            task = json.loads(buffer.getvalue())
+            self.assertEqual(task["family"], "artifact")
+
+    def test_generate_task_kwarg_forwards_to_fixture_only(self) -> None:
+        """generate_task only passes fixture_template to unbrowser_fixture."""
+        with tempfile.TemporaryDirectory() as directory:
+            fixture_task = generate_task(
+                "unbrowser_fixture", directory, 1, "easy",
+                fixture_template="distractor_recovery",
+            )
+            self.assertEqual(
+                fixture_task.public_metadata["template"], "distractor_recovery"
+            )
+            # Non-fixture family silently ignores the template kwarg.
+            artifact_task = generate_task(
+                "artifact", directory, 1, "easy",
+                fixture_template="bogus_ignored",
+            )
+            self.assertEqual(artifact_task.family, "artifact")
+
+    def test_generate_task_forwards_outcome_only_fixture_version(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            task = generate_task(
+                "unbrowser_fixture",
+                directory,
+                1,
+                "easy",
+                fixture_template="single_page_extraction",
+                fixture_generator_version="unbrowser-fixture-v3",
+            )
+            self.assertEqual(task.generator_version, "unbrowser-fixture-v3")
+            self.assertEqual(
+                task.public_metadata["prompt_profile"], "outcome_only_v1"
+            )
+
+    def test_cli_generate_accepts_outcome_only_fixture_version(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            buffer = io.StringIO()
+            with redirect_stdout(buffer):
+                code = cli_main(
+                    [
+                        "generate",
+                        "--family",
+                        "unbrowser_fixture",
+                        "--root",
+                        directory,
+                        "--seed",
+                        "7",
+                        "--difficulty",
+                        "easy",
+                        "--fixture-generator-version",
+                        "unbrowser-fixture-v3",
+                    ]
+                )
+            self.assertEqual(code, 0)
+            task = json.loads(buffer.getvalue())
+            self.assertEqual(task["generator_version"], "unbrowser-fixture-v3")
+
+            buffer = io.StringIO()
+            with redirect_stdout(buffer):
+                code = cli_main(
+                    [
+                        "fixture-task-commitment",
+                        "--root",
+                        directory,
+                        "--task-id",
+                        task["id"],
+                    ]
+                )
+            self.assertEqual(code, 0)
+            commitment = json.loads(buffer.getvalue())
+            self.assertEqual(commitment["task"]["id"], task["id"])
+            self.assertEqual(len(commitment["workspace_sha256"]), 64)
+            self.assertEqual(len(commitment["oracle_sha256"]), 64)
+            self.assertEqual(len(commitment["commitment_hash"]), 64)
+
+    def test_task_role_is_fixture_only(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            task = generate_task(
+                "unbrowser_fixture",
+                directory,
+                3,
+                "easy",
+                task_role="T_pilot",
+            )
+            self.assertEqual(task.public_metadata["task_role"], "T_pilot")
+            with self.assertRaisesRegex(ValueError, "only supported"):
+                generate_task(
+                    "artifact", directory, 4, "easy", task_role="T_pilot"
+                )
+
+    def test_routing_fixture_accepts_task_role(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            seed = _routing_fixture_seed("easy")
+            task = generate_task(
+                "routing_fixture",
+                directory,
+                seed,
+                "easy",
+                task_role="T_canary",
+            )
+            self.assertEqual(task.family, "routing_fixture")
+            self.assertEqual(task.public_metadata["task_role"], "T_canary")
+
+    def test_routing_fixture_rejects_wrong_difficulty(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            seed = _routing_fixture_seed("easy")
+            with self.assertRaisesRegex(ValueError, "difficulty"):
+                generate_task("routing_fixture", directory, seed, "hard")
+
+    def test_cli_generate_routing_fixture_dispatches(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            seed = _routing_fixture_seed("easy")
+            buffer = io.StringIO()
+            with redirect_stdout(buffer):
+                code = cli_main(
+                    [
+                        "generate",
+                        "--family",
+                        "routing_fixture",
+                        "--root",
+                        directory,
+                        "--seed",
+                        str(seed),
+                        "--difficulty",
+                        "easy",
+                        "--task-role",
+                        "T_canary",
+                    ]
+                )
+            self.assertEqual(code, 0)
+            task = json.loads(buffer.getvalue())
+            self.assertEqual(task["family"], "routing_fixture")
+            self.assertEqual(task["public_metadata"]["task_role"], "T_canary")
+            self.assertTrue(task["id"].startswith("routing-fixture-"))
+            self.assertIn(
+                "/routing/", task["public_metadata"]["allowed_url"]
+            )
+
 
 class OrchestratorTest(unittest.TestCase):
     def test_pair_order_is_deterministic_from_seed(self) -> None:
@@ -249,6 +461,8 @@ class OrchestratorTest(unittest.TestCase):
                 return {"id": "t9", "prompt": "p"}
             if head == "prepare-attempt":
                 return {"workspace_ref": "/r/ws"}
+            if head == "record-events":
+                return {"recorded": 0}
             if head == "verify":
                 return {
                     "success": False,
@@ -280,9 +494,11 @@ class OrchestratorTest(unittest.TestCase):
 
         generate = [c for c in commands if c[0] == "generate"]
         verify = [c for c in commands if c[0] == "verify"]
+        record = [c for c in commands if c[0] == "record-events"]
         self.assertEqual(len(generate), 1)
         self.assertEqual(generate[0][2], "artifact")
         self.assertEqual(len(verify), 1)
+        self.assertEqual(len(record), 1)
         # Pi failure and verification failure are both still reported.
         self.assertFalse(result["verification"]["success"])
         self.assertEqual(result["pi_return_code"], 3)

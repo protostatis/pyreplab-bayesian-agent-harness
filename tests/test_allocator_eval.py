@@ -495,6 +495,35 @@ class TreatmentAllocationTest(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
+# Fail-closed split handling (excluded rows must never enter cost fitting)
+# ---------------------------------------------------------------------------
+class FailClosedSplitTest(unittest.TestCase):
+    def test_row_split_rejects_excluded_and_unknown_splits(self) -> None:
+        for split in ("canary_excluded", "pilot_excluded", "bogus"):
+            with self.subTest(split=split):
+                with self.assertRaises(ValueError):
+                    ae._row_split(make_row("t1", "direct", split, True))
+
+    def test_row_split_rejects_missing_split(self) -> None:
+        row = make_row("t1", "direct", "train", True)
+        del row["split"]
+        with self.assertRaises(ValueError):
+            ae._row_split(row)
+
+    def test_cost_fit_rejects_excluded_rows(self) -> None:
+        rows = [make_row("t1", "direct", "train", True, tokens=100)]
+        rows.append(make_row("t2", "direct", "canary_excluded", True, tokens=999999))
+        with self.assertRaisesRegex(ValueError, "split"):
+            ae.fit_train_cost(rows)
+
+    def test_task_pairs_reject_excluded_rows(self) -> None:
+        rows = paired_rows([("t1", True, True)])
+        rows.append(make_row("t2", "direct", "pilot_excluded", True))
+        with self.assertRaisesRegex(ValueError, "split"):
+            ae.build_task_pairs(rows, "test")
+
+
+# ---------------------------------------------------------------------------
 # Cost extraction and train-only fitting
 # ---------------------------------------------------------------------------
 class CostFitTest(unittest.TestCase):
