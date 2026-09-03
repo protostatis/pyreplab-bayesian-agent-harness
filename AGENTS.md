@@ -6,6 +6,16 @@ Reports are read by the project operator, not by another agent. Shorthand and
 compressed jargon that assume the whole experiment is loaded in the reader's
 head do not help. Rules:
 
+- **Minimal jargon; plain simple English in responses.** The operator is not a
+  jargon machine. Technical shorthand is fine in internal reasoning and in
+  code, but responses to the operator use everyday sentences. Terms like
+  "preflight", "failure floor", "power analysis", and "preregistered bar"
+  must be translated every time they appear (e.g., "the startup check that
+  keeps the machine awake", "test tasks the agent gets wrong about half the
+  time, so there's room to improve", "a plan for how many runs we need before
+  we start", "the pass/fail standard we wrote down before looking at
+  results"). If a term can't be said simply, say the sentence instead of the
+  term.
 - **No letter-code labels without the full name.** Write "the
   recovery-discipline prompt arm" — never bare "R-arm", "the R arm", "C−E".
   On first use in a message, give the plain name; the short code may follow
